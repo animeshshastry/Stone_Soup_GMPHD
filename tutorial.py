@@ -31,7 +31,7 @@ plt.style.use('seaborn-colorblind')
 # Other general imports
 import numpy as np
 from datetime import datetime, timedelta
-
+import time
 from shapely.geometry import Point
 from shapely.geometry.polygon import Polygon
 
@@ -207,6 +207,7 @@ for k in range(number_steps):
 
     all_measurements.append(measurement_set)
 
+time0 = time.time()
 
 from stonesoup.updater.kalman import KalmanUpdater
 kalman_updater = KalmanUpdater(measurement_model)
@@ -271,6 +272,9 @@ birth_component = TaggedWeightedGaussianState(
 all_gaussians = []
 tracks_by_time = []
 
+print("--- Took %s seconds to initilize ---" % (time.time() - time0))
+time0 = datetime.now()
+
 for n, measurements in enumerate(all_measurements):
     tracks_by_time.append([])
     all_gaussians.append([])
@@ -326,6 +330,9 @@ for n, measurements in enumerate(all_measurements):
                 new_track = Track(reduced_state)
                 tracks.add(new_track)
                 tracks_by_time[n].append(reduced_state)
+
+time_elaspsed = datetime.now()-time0
+print("--- Took %s seconds on average per iteration ---" % (time_elaspsed.seconds/float(number_steps)))
 
 x_min, x_max, y_min, y_max = -100, 100, -100, 100
 
@@ -483,17 +490,17 @@ from matplotlib.lines import Line2D  # Will be used when making the legend
 
 
 
-plt.style.use('dark_background')
-from stonesoup.plotter import Plotter
-plotter = Plotter()
-plotter.plot_ground_truths(truths, [0, 2])
-plotter.plot_measurements(all_measurements, [0, 2], color='g')
-plotter.plot_tracks(tracks, [0, 2], uncertainty=True)
-plotter.ax.plot(UAV1[:,0], UAV1[:,1], '--')
-plotter.ax.plot(UAV2[:,0], UAV2[:,1], '--')
-plotter.ax.plot(UAV3[:,0], UAV3[:,1], '--')
-plotter.ax.set_xlim(-100, 100)
-plotter.ax.set_ylim(-100, 100)
-plt.show()
+# plt.style.use('dark_background')
+# from stonesoup.plotter import Plotter
+# plotter = Plotter()
+# plotter.plot_ground_truths(truths, [0, 2])
+# plotter.plot_measurements(all_measurements, [0, 2], color='g')
+# plotter.plot_tracks(tracks, [0, 2], uncertainty=True)
+# plotter.ax.plot(UAV1[:,0], UAV1[:,1], '--')
+# plotter.ax.plot(UAV2[:,0], UAV2[:,1], '--')
+# plotter.ax.plot(UAV3[:,0], UAV3[:,1], '--')
+# plotter.ax.set_xlim(-100, 100)
+# plotter.ax.set_ylim(-100, 100)
+# plt.show()
 
 print("Completed")
