@@ -37,48 +37,60 @@ from shapely.geometry.polygon import Polygon
 
 deg2rad = 3.14/180.0
 
-number_steps = 60
-death_probability = 0.005
-birth_probability = 0.2
+number_steps = 150
+death_probability = 0.000000005
+birth_probability = 0.00002
 probability_detection = 0.9
-clutter_rate = 1.0
 merge_threshold = 5
 prune_threshold = 1E-8
-state_threshold = 0.25
+state_threshold = 0.1
+
+FOVsize=30.0*np.sqrt(2)
+clutter_rate = 0.1*(1.0/100.0)*(FOVsize/np.sqrt(2))**2
 
 start_time = datetime.now()
 truths_by_time = []
 
+def getFOVPolygon(UAV_pos,orient,size):
+    corner1 = (UAV_pos[0]+size*np.cos(orient+45*deg2rad),UAV_pos[1]+size*np.sin(orient+45*deg2rad))
+    corner2 = (UAV_pos[0]+size*np.cos(orient+135*deg2rad),UAV_pos[1]+size*np.sin(orient+135*deg2rad))
+    corner3 = (UAV_pos[0]+size*np.cos(orient+225*deg2rad),UAV_pos[1]+size*np.sin(orient+225*deg2rad))
+    corner4 = (UAV_pos[0]+size*np.cos(orient+315*deg2rad),UAV_pos[1]+size*np.sin(orient+315*deg2rad))
+    return Polygon([corner1, corner2, corner3, corner4])
+
+def inFOV(target_state,UAV_state):
+    point = Point(target_state[0], target_state[2])
+    polygon = getFOVPolygon([UAV_state[0],UAV_state[1]],UAV_state[2],FOVsize)
+
+    return polygon.contains(point)
+
+## Generate UAV positions and orientations
 UAV1 = []
 UAV2 = []
 UAV3 = []
 for i in range(number_steps):
-    UAV1.append([-30+30*np.cos(i/10),30+10*np.sin(i/10),i/10])
+    UAV1.append([-30+30*np.cos(i/10),30+10*np.sin(-i/10),-i/10])
     UAV2.append([0+30*np.cos(i/10),0+30*np.sin(i/10),i/10])
-    UAV3.append([-30+10*np.cos(i/10),-30+30*np.sin(i/10),i/10])
+    UAV3.append([-30+10*np.cos(i/10),-30+30*np.sin(-i/10),-i/10])
 
 UAV1 = np.array(UAV1)
 UAV2 = np.array(UAV2)
 UAV3 = np.array(UAV3)
-
 # print(UAV1[:,0])
 
-def inFOV(target_state,UAV_pos):
-    
-    point = Point(target_state[0], target_state[2])
-    size=50.0*np.sqrt(2)
-    corner1 = (UAV_pos[0]+size*np.cos(UAV_pos[2]+45*deg2rad),UAV_pos[1]+size*np.sin(UAV_pos[2]+45*deg2rad))
-    corner2 = (UAV_pos[0]+size*np.cos(UAV_pos[2]+135*deg2rad),UAV_pos[1]+size*np.sin(UAV_pos[2]+135*deg2rad))
-    corner3 = (UAV_pos[0]+size*np.cos(UAV_pos[2]+225*deg2rad),UAV_pos[1]+size*np.sin(UAV_pos[2]+225*deg2rad))
-    corner4 = (UAV_pos[0]+size*np.cos(UAV_pos[2]+315*deg2rad),UAV_pos[1]+size*np.sin(UAV_pos[2]+315*deg2rad))
-    polygon = Polygon([corner1, corner2, corner3, corner4])
-
-    return polygon.contains(point)
+## Generate FOVPolygons for plotting
+UAV1_Polygon = []
+UAV2_Polygon = []
+UAV3_Polygon = []
+for i in range(number_steps):
+    UAV1_Polygon.append(getFOVPolygon([UAV1[i][0],UAV1[i][1]],UAV1[i][2],FOVsize))
+    UAV2_Polygon.append(getFOVPolygon([UAV2[i][0],UAV2[i][1]],UAV2[i][2],FOVsize))
+    UAV3_Polygon.append(getFOVPolygon([UAV3[i][0],UAV3[i][1]],UAV3[i][2],FOVsize))
 
 # Create transition model
 from stonesoup.models.transition.linear import CombinedLinearGaussianTransitionModel, ConstantVelocity
 transition_model = CombinedLinearGaussianTransitionModel(
-    (ConstantVelocity(0.3), ConstantVelocity(0.3)))
+    (ConstantVelocity(0.0001), ConstantVelocity(0.0001)))
 
 # Make the measurement model
 from stonesoup.models.measurement.linear import LinearGaussian
@@ -160,11 +172,13 @@ for k in range(number_steps):
     timestamp = start_time + timedelta(seconds=k)
 
     for truth in truths:
-        try:
-            truth_state = truth[timestamp]
-        except IndexError:
-            # This truth not alive at this time. Skip this iteration of the for loop.
-            continue
+        # try:
+        #     truth_state = truth[timestamp]
+        # except IndexError:
+        #     # This truth not alive at this time. Skip this iteration of the for loop.
+        #     continue
+
+        truth_state = truth[timestamp]
 
         if (inFOV(truth_state.state_vector,UAV1[k]) 
             or inFOV(truth_state.state_vector,UAV2[k]) 
@@ -185,8 +199,8 @@ for k in range(number_steps):
                 x = uniform.rvs(-200, 400)
                 y = uniform.rvs(-200, 400)
                 if(inFOV([x,0,y,0],UAV1[k]) 
-                        or inFOV([x,0,y,0],UAV2[k]) 
-                        or inFOV([x,0,y,0],UAV3[k])):
+                    or inFOV([x,0,y,0],UAV2[k]) 
+                    or inFOV([x,0,y,0],UAV3[k])):
                     measurement_set.add(Clutter(np.array([[x], [y]]), timestamp=timestamp,
                                         measurement_model=measurement_model))
                     break
@@ -199,7 +213,7 @@ kalman_updater = KalmanUpdater(measurement_model)
 
 # Area in which we look for target. Note that if a target appears outside of this area the
 # filter will not pick up on it.
-meas_range = np.array([[-1, 1], [-1, 1]])*200
+meas_range = np.array([[-1, 1], [-1, 1]])*400
 clutter_spatial_density = clutter_rate/np.prod(np.diff(meas_range))
 
 from stonesoup.updater.pointprocess import PHDUpdater
@@ -214,7 +228,7 @@ kalman_predictor = KalmanPredictor(transition_model)
 
 from stonesoup.hypothesiser.distance import DistanceHypothesiser
 from stonesoup.measures import Mahalanobis
-base_hypothesiser = DistanceHypothesiser(kalman_predictor, kalman_updater, Mahalanobis(), missed_distance=3)
+base_hypothesiser = DistanceHypothesiser(kalman_predictor, kalman_updater, Mahalanobis(), missed_distance=30)
 
 from stonesoup.hypothesiser.gaussianmixture import GaussianMixtureHypothesiser
 hypothesiser = GaussianMixtureHypothesiser(base_hypothesiser, order_by_detection=True)
@@ -293,8 +307,9 @@ for n, measurements in enumerate(all_measurements):
     for reduced_state in reduced_states:
         # Add the reduced state to the list of Gaussians that we will plot later. Have a low threshold to eliminate some
         # clutter that would make the graph busy and hard to understand
-        if reduced_state.weight > 0.05: all_gaussians[n].append(reduced_state)
+        # if reduced_state.weight > 0.001: all_gaussians[n].append(reduced_state)
 
+        all_gaussians[n].append(reduced_state)
         tag = reduced_state.tag
         # Here we check to see if the state has a sufficiently high weight to consider being added.
         if reduced_state.weight > state_threshold:
@@ -353,119 +368,132 @@ from matplotlib import animation
 from matplotlib import pyplot as plt
 from matplotlib.lines import Line2D  # Will be used when making the legend
 
-# This is the function that updates the figure we will be animating. As parameters we must
-# pass in the elements that will be changed, as well as the index i
-def animate(i, sf, truths, tracks, measurements, clutter):
-    # Set up the axes
-    axL.clear()
-    axR.set_title('Tracking Space at k='+str(i))
-    axL.set_xlabel("x")
-    axL.set_ylabel("y")
-    axL.set_title('PDF of the Gaussian Mixture')
-    axL.view_init(elev=30, azim=-80)
-    axL.set_zlim(0, 0.3)
+# # This is the function that updates the figure we will be animating. As parameters we must
+# # pass in the elements that will be changed, as well as the index i
+# def animate(i, sf, truths, tracks, measurements, clutter):
+#     # Set up the axes
+#     axL.clear()
+#     axR.set_title('Tracking Space at k='+str(i))
+#     axL.set_xlabel("x")
+#     axL.set_ylabel("y")
+#     axL.set_title('PDF of the Gaussian Mixture')
+#     axL.view_init(elev=30, azim=-80)
+#     axL.set_zlim(0, 0.3)
 
-    # Initialize the variables
-    weights = []  # weights of each Gaussian. This is analogous to the probability of its existence
-    means = []    # means of each Gaussian. This is equal to the x and y of its state vector
-    sigmas = []   # standard deviation of each Gaussian.
+#     # Initialize the variables
+#     weights = []  # weights of each Gaussian. This is analogous to the probability of its existence
+#     means = []    # means of each Gaussian. This is equal to the x and y of its state vector
+#     sigmas = []   # standard deviation of each Gaussian.
 
-    # Fill the lists of weights, means, and standard deviations
-    for state in all_gaussians[i]:
-        weights.append(state.weight)
-        means.append([state.state_vector[0], state.state_vector[2]])
-        sigmas.append([state.covar[0][0], state.covar[1][1]])
-    means = np.array(means)
-    sigmas = np.array(sigmas)
+#     # Fill the lists of weights, means, and standard deviations
+#     for state in all_gaussians[i]:
+#         weights.append(state.weight)
+#         means.append([state.state_vector[0], state.state_vector[2]])
+#         sigmas.append([state.covar[0][0], state.covar[1][1]])
+#     means = np.array(means)
+#     sigmas = np.array(sigmas)
 
-    # Generate the z values over the space and plot on the left axis
-    zarray[:, :, i] = get_mixture_density(x, y, weights, means, sigmas)
-    sf = axL.plot_surface(x, y, zarray[:, :, i], cmap=cm.RdBu, linewidth=0, antialiased=False)
+#     # Generate the z values over the space and plot on the left axis
+#     zarray[:, :, i] = get_mixture_density(x, y, weights, means, sigmas)
+#     sf = axL.plot_surface(x, y, zarray[:, :, i], cmap=cm.RdBu, linewidth=0, antialiased=False)
 
-    # Make lists to hold the new ground truths, tracks, detections, and clutter
-    new_truths, new_tracks, new_measurements, new_clutter = [], [], [], []
-    for truth in truths_by_time[i]:
-        new_truths.append([truth.state_vector[0], truth.state_vector[2]])
-    for state in tracks_by_time[i]:
-        new_tracks.append([state.state_vector[0], state.state_vector[2]])
-    for measurement in all_measurements[i]:
-        if isinstance(measurement, TrueDetection):
-            new_measurements.append([measurement.state_vector[0], measurement.state_vector[1]])
-        elif isinstance(measurement, Clutter):
-            new_clutter.append([measurement.state_vector[0], measurement.state_vector[1]])
+#     # Make lists to hold the new ground truths, tracks, detections, and clutter
+#     new_truths, new_tracks, new_measurements, new_clutter, new_UAV1_p = [], [], [], [], []
+#     for truth in truths_by_time[i]:
+#         new_truths.append([truth.state_vector[0], truth.state_vector[2]])
+#     for state in tracks_by_time[i]:
+#         new_tracks.append([state.state_vector[0], state.state_vector[2]])
+#     for measurement in all_measurements[i]:
+#         if isinstance(measurement, TrueDetection):
+#             new_measurements.append([measurement.state_vector[0], measurement.state_vector[1]])
+#         elif isinstance(measurement, Clutter):
+#             new_clutter.append([measurement.state_vector[0], measurement.state_vector[1]])
 
-    # Plot the contents of these lists on the right axis
-    if new_truths:
-        truths.set_offsets(new_truths)
-    if new_tracks:
-        tracks.set_offsets(new_tracks)
-    if new_measurements:
-        measurements.set_offsets(new_measurements)
-    if new_clutter:
-        clutter.set_offsets(new_clutter)
+#     # Plot the contents of these lists on the right axis
+#     if new_truths:
+#         truths.set_offsets(new_truths)
+#     if new_tracks:
+#         tracks.set_offsets(new_tracks)
+#     if new_measurements:
+#         measurements.set_offsets(new_measurements)
+#     if new_clutter:
+#         clutter.set_offsets(new_clutter)
 
-    # Create a legend. The use of Line2D is purely for the visual in the legend
-    data_types = [Line2D([0], [0], color='white', marker='o', markerfacecolor='blue', markersize=15,
-                         label='Ground Truth'),
-                 Line2D([0], [0], color='white', marker='o', markerfacecolor='orange', markersize=15,
-                         label='Clutter'),
-                 Line2D([0], [0], color='white', marker='o', markerfacecolor='green', markersize=15,
-                         label='Detection'),
-                 Line2D([0], [0], color='white', marker='o', markerfacecolor='red', markersize=15,
-                         label='Track')]
-    axR.legend(handles=data_types, bbox_to_anchor=(1.0, 1), loc='upper left')
+#     UAV1_p.set_offsets([UAV1[i][0],UAV1[i][1]])
+#     UAV2_p.set_offsets([UAV2[i][0],UAV2[i][1]])
+#     UAV3_p.set_offsets([UAV3[i][0],UAV3[i][1]])
 
-    return sf, truths, tracks, measurements, clutter
+#     UAV1_FOV_Plot.set_data(*UAV1_Polygon[i].exterior.xy)
+#     UAV2_FOV_Plot.set_data(*UAV2_Polygon[i].exterior.xy)
+#     UAV3_FOV_Plot.set_data(*UAV3_Polygon[i].exterior.xy)
 
-# Set up the x, y, and z space for the 3D axis
-xx = np.linspace(x_min-5, x_max+5, 100)
-yy = np.linspace(y_min-5, y_max+5, 100)
-x, y = np.meshgrid(xx, yy)
-zarray = np.zeros((100, 100, number_steps))
+#     # Create a legend. The use of Line2D is purely for the visual in the legend
+#     data_types = [Line2D([0], [0], color='white', marker='o', markerfacecolor='blue', markersize=15,
+#                          label='Ground Truth'),
+#                  Line2D([0], [0], color='white', marker='1', markerfacecolor='green', markersize=15,
+#                          label='Clutter'),
+#                  Line2D([0], [0], color='white', marker='1', markerfacecolor='orange', markersize=15,
+#                          label='Detection'),
+#                  Line2D([0], [0], color='white', marker='x', markerfacecolor='red', markersize=15,
+#                          label='Track'),
+#                  Line2D([0], [0], color='white', marker='*', markerfacecolor='white', markersize=15,
+#                          label='UAV')]
+#     axR.legend(handles=data_types, bbox_to_anchor=(1.0, 1), loc='upper left')
 
-# Create the matplotlib figure and axes. Here we will have two axes being animated in sync.
-# `axL` will be the a 3D axis showing the Gaussian mixture
-# `axR` will be be a 2D axis showing the ground truth, detections, and updated tracks at
-# each time step.
-plt.style.use('dark_background')
-fig = plt.figure(figsize=(16, 8))
-axL = fig.add_subplot(121, projection='3d')
-axR = fig.add_subplot(122)
-axR.set_xlim(x_min-5, x_max+5)
-axR.set_ylim(y_min-5, y_max+5)
+#     return sf, truths, tracks, measurements, clutter
 
-# Add an initial surface to the left axis and scattered points on the right axis. Doing
-# this now means that in the animate() function we only have to update these variables
-sf = axL.plot_surface(x, y, zarray[:, :, 0], cmap=cm.RdBu, linewidth=0, antialiased=False)
-truths = axR.scatter(x_min-10, y_min-10, c='blue', linewidth=6, zorder=0.5)
-tracks = axR.scatter(x_min-10, y_min-10, c='red', linewidth=4, zorder=1)
-measurements = axR.scatter(x_min-10, y_min-10, c='green', linewidth=4, zorder=0.5)
-clutter = axR.scatter(x_min-10, y_min-10, c='orange', linewidth=4, zorder=0.5)
+# # Set up the x, y, and z space for the 3D axis
+# xx = np.linspace(x_min-5, x_max+5, 100)
+# yy = np.linspace(y_min-5, y_max+5, 100)
+# x, y = np.meshgrid(xx, yy)
+# zarray = np.zeros((100, 100, number_steps))
 
-# Create and display the animation
-from matplotlib import rc
-anim = animation.FuncAnimation(fig, animate, frames=number_steps, interval=100,
-                               fargs=(sf, truths, tracks, measurements, clutter), blit=False)
-rc('animation', html='jshtml')
-anim.save("output.gif")
-
-# from stonesoup.plotter import Plotter
-# plotter = Plotter()
-# plotter.plot_ground_truths(truths, [0, 2])
-# plotter.plot_measurements(all_measurements, [0, 2], color='g')
-# plt.show()
-
+# # Create the matplotlib figure and axes. Here we will have two axes being animated in sync.
+# # `axL` will be the a 3D axis showing the Gaussian mixture
+# # `axR` will be be a 2D axis showing the ground truth, detections, and updated tracks at
+# # each time step.
 # plt.style.use('dark_background')
-# from stonesoup.plotter import Plotter
-# plotter = Plotter()
-# plotter.plot_ground_truths(truths, [0, 2])
-# plotter.plot_measurements(all_measurements, [0, 2], color='g')
-# plotter.plot_tracks(tracks, [0, 2], uncertainty=True)
-# plotter.ax.plot(UAV1[:,0], UAV1[:,1], '--')
-# plotter.ax.plot(UAV2[:,0], UAV2[:,1], '--')
-# plotter.ax.plot(UAV3[:,0], UAV3[:,1], '--')
-# plotter.ax.set_xlim(-100, 100)
-# plotter.ax.set_ylim(-100, 100)
-# plt.show()
+# fig = plt.figure(figsize=(16, 8))
+# axL = fig.add_subplot(121, projection='3d')
+# axR = fig.add_subplot(122)
+# axR.set_xlim(x_min-5, x_max+5)
+# axR.set_ylim(y_min-5, y_max+5)
+
+# # Add an initial surface to the left axis and scattered points on the right axis. Doing
+# # this now means that in the animate() function we only have to update these variables
+# sf = axL.plot_surface(x, y, zarray[:, :, 0], cmap=cm.RdBu, linewidth=0, antialiased=False)
+# truths = axR.scatter(x_min-10, y_min-10, c='blue', linewidth=6, zorder=0.5)
+# tracks = axR.scatter(x_min-10, y_min-10, c='red', s=200, marker="x" , linewidth=2, zorder=1)
+# measurements = axR.scatter(x_min-10, y_min-10, c='orange', s=200, marker="1", linewidth=3, zorder=0.5)
+# clutter = axR.scatter(x_min-10, y_min-10, c='green', s=200, marker="1", linewidth=2, zorder=0.5)
+# UAV1_p = axR.scatter(x_min-10, y_min-10, s=200, c='white', marker="*", linewidth=1, zorder=2)
+# UAV2_p = axR.scatter(x_min-10, y_min-10, s=200, c='white', marker="*", linewidth=1, zorder=2)
+# UAV3_p = axR.scatter(x_min-10, y_min-10, s=200, c='white', marker="*", linewidth=1, zorder=2)
+
+# UAV1_FOV_Plot, = axR.plot([],[],'-w')
+# UAV2_FOV_Plot, = axR.plot([],[],'-w')
+# UAV3_FOV_Plot, = axR.plot([],[],'-w')
+
+# # Create and display the animation
+# from matplotlib import rc
+# anim = animation.FuncAnimation(fig, animate, frames=number_steps, interval=100,
+#                                fargs=(sf, truths, tracks, measurements, clutter), blit=False)
+# rc('animation', html='jshtml')
+# anim.save("output.gif")
+
+
+
+plt.style.use('dark_background')
+from stonesoup.plotter import Plotter
+plotter = Plotter()
+plotter.plot_ground_truths(truths, [0, 2])
+plotter.plot_measurements(all_measurements, [0, 2], color='g')
+plotter.plot_tracks(tracks, [0, 2], uncertainty=True)
+plotter.ax.plot(UAV1[:,0], UAV1[:,1], '--')
+plotter.ax.plot(UAV2[:,0], UAV2[:,1], '--')
+plotter.ax.plot(UAV3[:,0], UAV3[:,1], '--')
+plotter.ax.set_xlim(-100, 100)
+plotter.ax.set_ylim(-100, 100)
+plt.show()
 
 print("Completed")
