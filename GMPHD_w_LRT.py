@@ -37,18 +37,23 @@ import cv2
 
 deg2rad = 3.14/180.0
 
-number_steps = 60
-death_probability = 0.005
-birth_probability = 0.2
-probability_detection = 0.9
-merge_threshold = 5
-prune_threshold = 1E-8
-state_threshold = 0.15
+PIXELS_X, PIXELS_Y = 200, 200
+x_min, x_max, y_min, y_max = -100, 100, -100, 100
 
-FOVsize=30.0*np.sqrt(2)
+number_steps = 60
+death_probability = 1e-4
+birth_probability = 1e-4
+probability_detection = 0.9
+merge_threshold = 25
+prune_threshold = 1E-8
+state_threshold = 0.5
+
 HFOV = 90*deg2rad # degrees
 VFOV = 90*deg2rad # degrees
-clutter_rate = 0.1*(1.0/100.0)*(FOVsize/np.sqrt(2))**2
+
+FOVsize=30.0*np.sqrt(2)
+clutter_rate = 0.05*(1.0/100.0)*(FOVsize/np.sqrt(2))**2
+print(clutter_rate)
 
 USE_CONST_ACC_MODEL = False
 
@@ -128,9 +133,9 @@ for i in range(number_steps):
     acc1 = np.array([[-30*(1/10)*(1/10)*np.cos(i/10) , -10*(-1/10)*(-1/10)*np.sin(-i/10) ,  9.81]])
     acc2 = np.array([[-50*(1/5)*(1/5)*np.cos(i/5) , -50*(1/5)*(1/5)*np.sin(i/5) ,     9.81]])
     acc3 = np.array([[-10*(1/10)*(1/10)*np.cos(i/10) , -30*(1/10)*(1/10)*np.sin(i/10) ,  9.81]])
-    yaw1 = -i/10
-    yaw2 = i/5
-    yaw3 = i/10
+    yaw1 = -i/10 + 3.14/2
+    yaw2 = i/5 + 3.14/2
+    yaw3 = i/10 + 3.14/2
     UAV1_Rot.append(get_Rotation_from_acc(acc1,yaw1))
     UAV2_Rot.append(get_Rotation_from_acc(acc2,yaw2))
     UAV3_Rot.append(get_Rotation_from_acc(acc3,yaw3))
@@ -282,7 +287,7 @@ for k in range(number_steps):
 
     # Generate clutter at this time-step
     for _ in range(np.random.poisson(clutter_rate)):
-            # while True:
+            while True:
                 x = uniform.rvs(-200, 400)
                 y = uniform.rvs(-200, 400)
                 if (USE_CONST_ACC_MODEL):
@@ -301,19 +306,19 @@ for k in range(number_steps):
 time0 = time.time()
 
 from stonesoup.updater.kalman import KalmanUpdater
-kalman_updater = KalmanUpdater(measurement_model)
+kalman_updater = KalmanUpdater(measurement_model, force_symmetric_covariance=True)
 
 # Area in which we look for target. Note that if a target appears outside of this area the
 # filter will not pick up on it.
-meas_range = np.array([[-1, 1], [-1, 1]])*400
+meas_range = np.array([[-1, 1], [-1, 1]])*100
 clutter_spatial_density = clutter_rate/np.prod(np.diff(meas_range))
 
 from stonesoup.updater.pointprocess import PHDUpdater
 updater = PHDUpdater(
     kalman_updater,
     clutter_spatial_density=clutter_spatial_density,
-    prob_detection=probability_detection,
-    prob_survival=1-death_probability)
+    prob_detection=0.1*probability_detection,
+    prob_survival=1.0-death_probability)
 
 from stonesoup.predictor.kalman import KalmanPredictor
 kalman_predictor = KalmanPredictor(transition_model)
@@ -415,7 +420,7 @@ for n, measurements in enumerate(all_measurements):
     for reduced_state in reduced_states:
         # Add the reduced state to the list of Gaussians that we will plot later. Have a low threshold to eliminate some
         # clutter that would make the graph busy and hard to understand
-        if reduced_state.weight > state_threshold: all_gaussians[n].append(reduced_state)
+        if reduced_state.weight > 0.1*state_threshold: all_gaussians[n].append(reduced_state)
         # all_gaussians[n].append(reduced_state)
 
         tag = reduced_state.tag
@@ -438,8 +443,6 @@ for n, measurements in enumerate(all_measurements):
 time_elaspsed = datetime.now()-time0
 print("--- Took %s seconds on average per iteration ---" % (time_elaspsed.seconds/float(number_steps)))
 
-x_min, x_max, y_min, y_max = -100, 100, -100, 100
-
 # # Get bounds from the tracks
 # for track in tracks:
 #     for state in track:
@@ -461,6 +464,12 @@ x_min, x_max, y_min, y_max = -100, 100, -100, 100
 from scipy.stats import multivariate_normal
 from mpl_toolkits.mplot3d import Axes3D
 from matplotlib import cm
+
+def get_entropy(p_array):
+    # print(p_array)
+    entropy = -p_array*np.log2(p_array+1e-10)
+    # print(entropy)
+    return entropy
 
 def get_mixture_density(x, y, weights, means, sigmas):
     # We use the quantiles as a parameter in the multivariate_normal function. We don't need to pass in any quantiles,
@@ -512,9 +521,13 @@ def animate(i, img_plot, truths, tracks, measurements, clutter):
     sigmas = np.array(sigmas)
 
     # Generate the z values over the space and plot on the left axis
-    zarray[:, :, i] = get_mixture_density(x, y, weights, means, sigmas)
+    # zarray[:, :, i] = get_mixture_density(x, y, weights, means, sigmas)
+    zarray[:, :, i] = get_entropy(get_mixture_density(x, y, weights, means, sigmas))
+
     # sf = axL.plot_surface(x, y, zarray[:, :, i], cmap=cm.RdBu, linewidth=0, antialiased=False)
-    img_plot = axR.imshow(cv2.flip(zarray[:, :, i],0),extent=[x_min,x_max,y_min,y_max])
+    img_plot = axR.imshow(cv2.flip(zarray[:, :, i],0),
+                            extent=[x_min,x_max,y_min,y_max],
+                            norm=cm.colors.Normalize(vmin=0, vmax=0.1))
 
 
     # Make lists to hold the new ground truths, tracks, detections, and clutter
@@ -571,10 +584,10 @@ def animate(i, img_plot, truths, tracks, measurements, clutter):
     return img_plot, truths, tracks, measurements, clutter
 
 # Set up the x, y, and z space for the 3D axis
-xx = np.linspace(x_min, x_max, 50)
-yy = np.linspace(y_min, y_max, 50)
+xx = np.linspace(x_min, x_max, PIXELS_X)
+yy = np.linspace(y_min, y_max, PIXELS_Y)
 x, y = np.meshgrid(xx, yy)
-zarray = np.zeros((50, 50, number_steps))
+zarray = np.zeros((PIXELS_X, PIXELS_Y, number_steps))
 
 # Create the matplotlib figure and axes. Here we will have two axes being animated in sync.
 # `axL` will be the a 3D axis showing the Gaussian mixture
@@ -607,7 +620,7 @@ UAV3_FOV_Plot, = axR.plot([],[],'-w')
 
 # Create and display the animation
 from matplotlib import rc
-anim = animation.FuncAnimation(fig, animate, frames=number_steps, interval=100,
+anim = animation.FuncAnimation(fig, animate, frames=number_steps, interval=200,
                                fargs=(img_plot, truths, tracks, measurements, clutter), blit=False)
 rc('animation', html='jshtml')
 anim.save("output.gif")
