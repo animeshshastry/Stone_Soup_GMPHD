@@ -36,6 +36,7 @@ from scipy.spatial.transform import Rotation as R
 import cv2
 
 deg2rad = 3.14/180.0
+USE_CONST_ACC_MODEL = False
 
 PIXELS_X, PIXELS_Y = 200, 200
 x_min, x_max, y_min, y_max = -100, 100, -100, 100
@@ -53,9 +54,19 @@ VFOV = 90*deg2rad # degrees
 
 FOVsize=30.0*np.sqrt(2)
 clutter_rate = 0.05*(1.0/100.0)*(FOVsize/np.sqrt(2))**2
-print(clutter_rate)
+# print(clutter_rate)
 
-USE_CONST_ACC_MODEL = False
+to_img_bias = [ 0.5*PIXELS_X, 0.5*PIXELS_Y ]
+to_img_scale = [ (x_max-x_min)/PIXELS_X , (y_max-y_min)/PIXELS_Y ]
+NEG_MEAS_VALUE = -0.5*9
+# p_s = 0.5; # probability of staying at the same location
+Decay = 0.0001; # decay rate
+Absent_Like = 0.5; # probability of target not present in arena
+Birth_Like = Decay*(1-Absent_Like);
+Death_Like = Decay*Absent_Like;
+blur_kernel = (1-Death_Like)*cv2.getGaussianKernel(3,0)
+Like_Ratio = np.zeros((PIXELS_X, PIXELS_Y))
+Like_Ratio_by_time = np.zeros((PIXELS_X, PIXELS_Y, number_steps))
 
 start_time = datetime.now()
 truths_by_time = []
@@ -66,7 +77,7 @@ ray3 = np.array([-np.tan(0.5*VFOV), np.tan(0.5*HFOV),-1])
 ray4 = np.array([-np.tan(0.5*VFOV), -np.tan(0.5*HFOV),-1])
 plane_normal = np.array([0,0,1])
 
-def getFOVPolygon(UAV_pos,orient):
+def getFOVCorners(UAV_pos,orient):
     # corner1 = (UAV_pos[0]+size*np.cos(orient+45*deg2rad),UAV_pos[1]+size*np.sin(orient+45*deg2rad))
     # corner2 = (UAV_pos[0]+size*np.cos(orient+135*deg2rad),UAV_pos[1]+size*np.sin(orient+135*deg2rad))
     # corner3 = (UAV_pos[0]+size*np.cos(orient+225*deg2rad),UAV_pos[1]+size*np.sin(orient+225*deg2rad))
@@ -96,7 +107,10 @@ def getFOVPolygon(UAV_pos,orient):
     corner3 = (corner3[0],corner3[1])
     corner4 = (corner4[0],corner4[1])
 
-    return Polygon([corner1, corner2, corner3, corner4])
+    return np.array([corner1,corner2,corner3,corner4])
+
+def getFOVPolygon(UAV_pos,orient):
+    return Polygon(getFOVCorners(UAV_pos,orient))
 
 if (USE_CONST_ACC_MODEL):
     def inFOV(target_state,UAV_state,UAV_orient):
@@ -385,6 +399,41 @@ print("--- Took %s seconds to initilize ---" % (time.time() - time0))
 time0 = datetime.now()
 
 for n, measurements in enumerate(all_measurements):
+
+    mask1 = np.zeros((PIXELS_Y,PIXELS_X))
+    mask2 = np.zeros((PIXELS_Y,PIXELS_X))
+    mask3 = np.zeros((PIXELS_Y,PIXELS_X))
+    UAV1_FOV = getFOVCorners(UAV1[n],UAV1_Rot[n]) * to_img_scale + to_img_bias
+    UAV2_FOV = getFOVCorners(UAV2[n],UAV2_Rot[n]) * to_img_scale + to_img_bias
+    UAV3_FOV = getFOVCorners(UAV3[n],UAV3_Rot[n]) * to_img_scale + to_img_bias
+    cv2.fillPoly(mask1, np.int32([UAV1_FOV]), color=1)
+    cv2.fillPoly(mask2, np.int32([UAV2_FOV]), color=1)
+    cv2.fillPoly(mask3, np.int32([UAV3_FOV]), color=1)
+    # mask1 = mask1.astype(bool)
+    # mask2 = mask2.astype(bool)
+    # mask3 = mask3.astype(bool)
+    mask = mask1
+    mask = cv2.bitwise_or(mask, mask2)
+    mask = cv2.bitwise_or(mask, mask3)
+    # cv2.imshow('title',mask)
+    # cv2.waitKey(0)
+    # cv2.destroyAllWindows() 
+
+    Like_Ratio_Blurred = cv2.filter2D(Like_Ratio,-1,blur_kernel)
+    Like_Ratio_Propagated = Birth_Like + Like_Ratio_Blurred
+    Log_Like_Ratio_Propagated = np.log2(Like_Ratio_Propagated)
+
+    Log_Like_Ratio_Update_Value = NEG_MEAS_VALUE * mask
+    Log_Like_Ratio = Log_Like_Ratio_Propagated + Log_Like_Ratio_Update_Value
+
+    # Like_Ratio_Quant = 1L << Log_Like_Ratio_Quant
+    Like_Ratio = np.power(2,Log_Like_Ratio)
+    
+    print(Like_Ratio)
+    cv2.imshow('title',1000*Like_Ratio)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows() 
+
     tracks_by_time.append([])
     all_gaussians.append([])
 
@@ -467,7 +516,7 @@ from matplotlib import cm
 
 def get_entropy(p_array):
     # print(p_array)
-    entropy = -p_array*np.log2(p_array+1e-10)
+    entropy = -p_array*np.log2(p_array+1e-10) - (1-p_array)*np.log2(1-p_array+1e-10)
     # print(entropy)
     return entropy
 
