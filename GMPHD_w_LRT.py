@@ -41,20 +41,21 @@ USE_CONST_ACC_MODEL = False
 PIXELS_X, PIXELS_Y = 200, 200
 x_min, x_max, y_min, y_max = -100, 100, -100, 100
 
-number_steps = 60
+number_steps = 120
 death_probability = 1e-4
 birth_probability = 1e-4
 probability_detection = 0.9
-merge_threshold = 25
+merge_threshold = 5
 prune_threshold = 1E-8
-state_threshold = 0.5
+state_threshold = 0.9
+gaussian_plot_threshold=0.1
 
 HFOV = 90*deg2rad # degrees
 VFOV = 90*deg2rad # degrees
 
 FOVsize=30.0*np.sqrt(2)
 clutter_rate = 0.05*(1.0/100.0)*(FOVsize/np.sqrt(2))**2
-# print(clutter_rate)
+print(clutter_rate)
 
 to_img_bias = [ 0.5*PIXELS_X, 0.5*PIXELS_Y ]
 to_img_scale = [ (x_max-x_min)/PIXELS_X , (y_max-y_min)/PIXELS_Y ]
@@ -172,10 +173,10 @@ for i in range(number_steps):
 from stonesoup.models.transition.linear import CombinedLinearGaussianTransitionModel, ConstantVelocity, ConstantAcceleration
 if (USE_CONST_ACC_MODEL):
     transition_model = CombinedLinearGaussianTransitionModel(
-        (ConstantAcceleration(0.0001), ConstantAcceleration(0.0001)))
+        (ConstantAcceleration(0.1), ConstantAcceleration(0.1)))
 else:
     transition_model = CombinedLinearGaussianTransitionModel(
-        (ConstantVelocity(0.0001), ConstantVelocity(0.0001)))
+        (ConstantVelocity(0.1), ConstantVelocity(0.1)))
 
 # Make the measurement model
 from stonesoup.models.measurement.linear import LinearGaussian
@@ -429,10 +430,10 @@ for n, measurements in enumerate(all_measurements):
     # Like_Ratio_Quant = 1L << Log_Like_Ratio_Quant
     Like_Ratio = np.power(2,Log_Like_Ratio)
     
-    print(Like_Ratio)
-    cv2.imshow('title',1000*Like_Ratio)
-    cv2.waitKey(0)
-    cv2.destroyAllWindows() 
+    # print(Like_Ratio)
+    # cv2.imshow('title',1000*Like_Ratio)
+    # cv2.waitKey(0)
+    # cv2.destroyAllWindows() 
 
     tracks_by_time.append([])
     all_gaussians.append([])
@@ -469,7 +470,7 @@ for n, measurements in enumerate(all_measurements):
     for reduced_state in reduced_states:
         # Add the reduced state to the list of Gaussians that we will plot later. Have a low threshold to eliminate some
         # clutter that would make the graph busy and hard to understand
-        if reduced_state.weight > 0.1*state_threshold: all_gaussians[n].append(reduced_state)
+        if reduced_state.weight > gaussian_plot_threshold: all_gaussians[n].append(reduced_state)
         # all_gaussians[n].append(reduced_state)
 
         tag = reduced_state.tag
