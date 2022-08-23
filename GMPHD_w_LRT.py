@@ -673,8 +673,8 @@ from matplotlib import rc
 anim = animation.FuncAnimation(fig, animate, frames=number_steps, interval=200,
                                fargs=(img_plot, truths, tracks, measurements, clutter), blit=False)
 rc('animation', html='jshtml')
-anim.save("output.gif")
-
+anim.save("output.mp4")
+# anim.save("output.gif",writer="fisjiofjs")
 
 
 # plt.style.use('dark_background')
