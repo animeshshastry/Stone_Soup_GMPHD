@@ -58,16 +58,18 @@ clutter_rate = 0.05*(1.0/100.0)*(FOVsize/np.sqrt(2))**2
 print(clutter_rate)
 
 to_img_bias = [ 0.5*PIXELS_X, 0.5*PIXELS_Y ]
-to_img_scale = [ (x_max-x_min)/PIXELS_X , (y_max-y_min)/PIXELS_Y ]
+to_img_scale = [ PIXELS_X/(x_max-x_min) , PIXELS_Y/(y_max-y_min) ]
 NEG_MEAS_VALUE = -0.5*9
 # p_s = 0.5; # probability of staying at the same location
-Decay = 0.0001; # decay rate
-Absent_Like = 0.5; # probability of target not present in arena
+SS_Like = 0.01 # Steady State Likelihood Value
+Decay = 0.01; # decay rate
+Absent_Like = 1/(1+SS_Like); # probability of target not present in arena
 Birth_Like = Decay*(1-Absent_Like);
 Death_Like = Decay*Absent_Like;
 blur_kernel = (1-Death_Like)*cv2.getGaussianKernel(3,0)
-Like_Ratio = np.zeros((PIXELS_X, PIXELS_Y))
-Like_Ratio_by_time = np.zeros((PIXELS_X, PIXELS_Y, number_steps))
+Like_Ratio = np.ones((PIXELS_X, PIXELS_Y)) * SS_Like
+Like_Ratio_by_time = []
+Search_Prob_by_time = []
 
 start_time = datetime.now()
 truths_by_time = []
@@ -429,7 +431,9 @@ for n, measurements in enumerate(all_measurements):
 
     # Like_Ratio_Quant = 1L << Log_Like_Ratio_Quant
     Like_Ratio = np.power(2,Log_Like_Ratio)
-    
+    Like_Ratio_by_time.append(Like_Ratio)
+    Search_Prob_by_time.append(Like_Ratio / ( 1 + Like_Ratio))
+
     # print(Like_Ratio)
     # cv2.imshow('title',1000*Like_Ratio)
     # cv2.waitKey(0)
@@ -573,6 +577,7 @@ def animate(i, img_plot, truths, tracks, measurements, clutter):
     # Generate the z values over the space and plot on the left axis
     # zarray[:, :, i] = get_mixture_density(x, y, weights, means, sigmas)
     zarray[:, :, i] = get_entropy(get_mixture_density(x, y, weights, means, sigmas))
+    zarray[:, :, i] += get_entropy(Search_Prob_by_time[i])
 
     # sf = axL.plot_surface(x, y, zarray[:, :, i], cmap=cm.RdBu, linewidth=0, antialiased=False)
     img_plot = axR.imshow(cv2.flip(zarray[:, :, i],0),
@@ -658,7 +663,7 @@ img_plot = axR.imshow(cv2.flip(zarray[:, :, 0],0),extent=[x_min,x_max,y_min,y_ma
 
 truths = axR.scatter(x_min, y_min, c='blue', s=200, marker="+", linewidth=2, zorder=0.5, label="Ground Truth")
 tracks = axR.scatter(x_min, y_min, c='red', s=200, marker="x" , linewidth=2, zorder=1, label="Track")
-measurements = axR.scatter(x_min, y_min, c='orange', s=200, marker="1", linewidth=2, zorder=0.5, label="Detection")
+measurements = axR.scatter(x_min, y_min, c='red', s=200, marker=".", linewidth=2, zorder=0.5, label="Detection")
 clutter = axR.scatter(x_min, y_min, c='green', s=200, marker="1", linewidth=2, zorder=0.5, label="Clutter")
 UAV1_p = axR.scatter(x_min, y_min, s=200, c='white', marker="*", linewidth=1, zorder=2, label="UAV")
 UAV2_p = axR.scatter(x_min, y_min, s=200, c='white', marker="*", linewidth=1, zorder=2)
