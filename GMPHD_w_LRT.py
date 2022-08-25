@@ -635,7 +635,7 @@ def animate(i, img_plot, truths, tracks, measurements, clutter):
     #              Line2D([0], [0], color='white', marker='*', markerfacecolor='white', markersize=15,
     #                      label='UAV')]
     # axR.legend(handles=data_types, bbox_to_anchor=(1.0, 1), loc='upper left')
-    axR.legend(bbox_to_anchor=(1.0, 1), loc='upper left')
+    # axR.legend(bbox_to_anchor=(1.0, 1), loc='upper left')
     return img_plot, truths, tracks, measurements, clutter
 
 # Set up the x, y, and z space for the 3D axis
@@ -648,7 +648,7 @@ zarray = np.zeros((PIXELS_X, PIXELS_Y, number_steps))
 # `axL` will be the a 3D axis showing the Gaussian mixture
 # `axR` will be be a 2D axis showing the ground truth, detections, and updated tracks at
 # each time step.
-plt.style.use('dark_background')
+# plt.style.use('dark_background')
 # fig = plt.figure(figsize=(16, 8))
 # axL = fig.add_subplot(121, projection='3d')
 # axR = fig.add_subplot(122)
@@ -659,7 +659,9 @@ axR.set_ylim(y_min, y_max)
 # Add an initial surface to the left axis and scattered points on the right axis. Doing
 # this now means that in the animate() function we only have to update these variables
 # sf = axL.plot_surface(x, y, zarray[:, :, 0], cmap=cm.RdBu, linewidth=0, antialiased=False)
-img_plot = axR.imshow(cv2.flip(zarray[:, :, 0],0),extent=[x_min,x_max,y_min,y_max])
+img_plot = axR.imshow(cv2.flip(zarray[:, :, 0],0),extent=[x_min,x_max,y_min,y_max],norm=cm.colors.Normalize(vmin=0, vmax=0.1))
+cbar = fig.colorbar(img_plot)
+cbar.set_label('Entropy',size=15)
 
 truths = axR.scatter(x_min, y_min, c='blue', s=200, marker="+", linewidth=2, zorder=0.5, label="Ground Truth")
 tracks = axR.scatter(x_min, y_min, c='red', s=200, marker="x" , linewidth=2, zorder=1, label="Track")
@@ -668,6 +670,8 @@ clutter = axR.scatter(x_min, y_min, c='green', s=200, marker="1", linewidth=2, z
 UAV1_p = axR.scatter(x_min, y_min, s=200, c='white', marker="*", linewidth=1, zorder=2, label="UAV")
 UAV2_p = axR.scatter(x_min, y_min, s=200, c='white', marker="*", linewidth=1, zorder=2)
 UAV3_p = axR.scatter(x_min, y_min, s=200, c='white', marker="*", linewidth=1, zorder=2)
+axR.legend(loc='upper right')
+# axR.legend(bbox_to_anchor=(1.0, 1), loc='upper left')
 
 UAV1_FOV_Plot, = axR.plot([],[],'-w')
 UAV2_FOV_Plot, = axR.plot([],[],'-w')
