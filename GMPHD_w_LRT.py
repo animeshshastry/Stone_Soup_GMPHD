@@ -35,6 +35,8 @@ from shapely.geometry.polygon import Polygon
 from scipy.spatial.transform import Rotation as R
 import cv2
 
+font_size = 20
+
 deg2rad = 3.14/180.0
 USE_CONST_ACC_MODEL = False
 
@@ -547,7 +549,7 @@ from matplotlib.lines import Line2D  # Will be used when making the legend
 def animate(i, img_plot, truths, tracks, measurements, clutter):
     # Set up the axes
     # axL.clear()
-    axR.set_title('Tracking Space at k='+str(i))
+    axR.set_title('Tracking Space at k='+str(i), fontsize=font_size)
     # axL.set_xlabel("x")
     # axL.set_ylabel("y")
     # axL.set_title('PDF of the Gaussian Mixture')
@@ -653,6 +655,8 @@ zarray = np.zeros((PIXELS_X, PIXELS_Y, number_steps))
 # axL = fig.add_subplot(121, projection='3d')
 # axR = fig.add_subplot(122)
 fig, axR = plt.subplots(figsize=(12, 10))
+plt.setp(axR.get_xticklabels(), fontsize=font_size)
+plt.setp(axR.get_yticklabels(), fontsize=font_size)
 axR.set_xlim(x_min, x_max)
 axR.set_ylim(y_min, y_max)
 
@@ -661,7 +665,8 @@ axR.set_ylim(y_min, y_max)
 # sf = axL.plot_surface(x, y, zarray[:, :, 0], cmap=cm.RdBu, linewidth=0, antialiased=False)
 img_plot = axR.imshow(cv2.flip(zarray[:, :, 0],0),extent=[x_min,x_max,y_min,y_max],norm=cm.colors.Normalize(vmin=0, vmax=0.1))
 cbar = fig.colorbar(img_plot)
-cbar.set_label('Entropy',size=15)
+cbar.set_label('Entropy',size=1.4*font_size)
+cbar.ax.tick_params(labelsize=font_size)
 
 truths = axR.scatter(x_min, y_min, c='blue', s=200, marker="+", linewidth=2, zorder=0.5, label="Ground Truth")
 tracks = axR.scatter(x_min, y_min, c='red', s=200, marker="x" , linewidth=2, zorder=1, label="Track")
@@ -670,7 +675,7 @@ clutter = axR.scatter(x_min, y_min, c='green', s=200, marker="1", linewidth=2, z
 UAV1_p = axR.scatter(x_min, y_min, s=200, c='white', marker="*", linewidth=1, zorder=2, label="UAV")
 UAV2_p = axR.scatter(x_min, y_min, s=200, c='white', marker="*", linewidth=1, zorder=2)
 UAV3_p = axR.scatter(x_min, y_min, s=200, c='white', marker="*", linewidth=1, zorder=2)
-axR.legend(loc='upper right')
+axR.legend(loc='upper right',prop={'size': 16})
 # axR.legend(bbox_to_anchor=(1.0, 1), loc='upper left')
 
 UAV1_FOV_Plot, = axR.plot([],[],'-w')
