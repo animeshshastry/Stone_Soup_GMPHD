@@ -40,7 +40,7 @@ font_size = 20
 deg2rad = 3.14/180.0
 USE_CONST_ACC_MODEL = False
 
-PIXELS_X, PIXELS_Y = 200, 200
+PIXELS_X, PIXELS_Y = 50, 50
 x_min, x_max, y_min, y_max = -100, 100, -100, 100
 
 number_steps = 120
@@ -51,6 +51,8 @@ merge_threshold = 5
 prune_threshold = 1E-8
 state_threshold = 0.9
 gaussian_plot_threshold=0.1
+
+target_sn = 0.2
 
 HFOV = 90*deg2rad # degrees
 VFOV = 90*deg2rad # degrees
@@ -75,6 +77,8 @@ Search_Prob_by_time = []
 
 start_time = datetime.now()
 truths_by_time = []
+
+entropy_by_time = np.zeros((PIXELS_X, PIXELS_Y, number_steps))
 
 ray1 = np.array([np.tan(0.5*VFOV), -np.tan(0.5*HFOV),-1])
 ray2 = np.array([np.tan(0.5*VFOV), np.tan(0.5*HFOV),-1])
@@ -400,8 +404,41 @@ else:
 all_gaussians = []
 tracks_by_time = []
 
+from scipy.stats import multivariate_normal
+from mpl_toolkits.mplot3d import Axes3D
+from matplotlib import cm
+import vorbin
+from vorbin.voronoi_2d_binning import voronoi_2d_binning
+
+def get_entropy(p_array):
+    # print(p_array)
+    entropy = -p_array*np.log2(p_array+1e-10) - (1-p_array)*np.log2(1-p_array+1e-10)
+    # print(entropy)
+    return entropy
+
+def get_mixture_density(x, y, weights, means, sigmas):
+    # We use the quantiles as a parameter in the multivariate_normal function. We don't need to pass in any quantiles,
+    # but the last axis must have the components x and y
+    quantiles = np.empty(x.shape + (2,))  # if  x.shape is (m,n) then quantiles.shape is (m,n,2)
+    quantiles[:, :, 0] = x
+    quantiles[:, :, 1] = y
+
+    # Go through each gaussian in the list and add its PDF to the mixture
+    z = np.zeros(x.shape)
+    for gaussian in range(len(weights)):
+        z += weights[gaussian]*multivariate_normal.pdf(x=quantiles, mean=means[gaussian, :], cov=sigmas[gaussian])
+    return z
+
 print("--- Took %s seconds to initilize ---" % (time.time() - time0))
 time0 = datetime.now()
+
+xx = np.linspace(x_min, x_max, PIXELS_X)
+yy = np.linspace(y_min, y_max, PIXELS_Y)
+x, y = np.meshgrid(xx, yy)
+
+tasks_x_by_time=[]
+tasks_y_by_time=[]
+tasks_by_time=[]
 
 for n, measurements in enumerate(all_measurements):
 
@@ -496,8 +533,54 @@ for n, measurements in enumerate(all_measurements):
                 tracks.add(new_track)
                 tracks_by_time[n].append(reduced_state)
 
+    # Initialize the variables
+    weights = []  # weights of each Gaussian. This is analogous to the probability of its existence
+    means = []    # means of each Gaussian. This is equal to the x and y of its state vector
+    sigmas = []   # standard deviation of each Gaussian.
+
+    # Fill the lists of weights, means, and standard deviations
+    if (USE_CONST_ACC_MODEL):
+        for state in all_gaussians[n]:
+            weights.append(state.weight)
+            means.append([state.state_vector[0], state.state_vector[3]])
+            sigmas.append([state.covar[0][0], state.covar[3][3]])
+    else:
+        for state in all_gaussians[n]:
+            weights.append(state.weight)
+            means.append([state.state_vector[0], state.state_vector[2]])
+            sigmas.append([state.covar[0][0], state.covar[2][2]])
+    
+    means = np.array(means)
+    sigmas = np.array(sigmas)
+    entropy_by_time[:, :, n] = get_entropy(get_mixture_density(x, y, weights, means, sigmas))
+    entropy_by_time[:, :, n] += get_entropy(Search_Prob_by_time[n])
+
+    signal = entropy_by_time[:, :, n]
+    noise = np.ones((PIXELS_X, PIXELS_Y))
+    binNum, x_gen, y_gen, x_bar, y_bar, sn, nPixels, scale = voronoi_2d_binning(
+        x.flatten(), y.flatten(), signal.flatten(), noise.flatten(), target_sn, plot=0, quiet=1)
+    # bin_img = binNum.reshape(PIXELS_X,PIXELS_Y)
+    # bin_img = 1+255*(bin_img/np.amax(bin_img))
+    # print(bin_img)
+    # cv2.imshow('title',bin_img)
+    # cv2.waitKey(0)
+    # cv2.destroyAllWindows() 
+
+    tasks_x_by_time.append(x_bar)
+    tasks_y_by_time.append(y_bar)
+    # tasks_by_time.append([x_gen,y_gen])
+
+    # plt.scatter(x_gen, y_gen)
+    # plt.tight_layout()
+    # plt.pause(0.1)
+    # plt.clf()
+
+print(tasks_by_time)
+
 time_elaspsed = datetime.now()-time0
-print("--- Took %s seconds on average per iteration ---" % (time_elaspsed.seconds/float(number_steps)))
+time_per_iteration = (time_elaspsed.seconds+1e-6*time_elaspsed.microseconds)/float(number_steps)
+print("--- Took %s seconds on average per iteration ---" % time_per_iteration)
+print("--- Estimated Rate %s Hz" % float(1/time_per_iteration))
 
 # # Get bounds from the tracks
 # for track in tracks:
@@ -516,30 +599,6 @@ print("--- Took %s seconds on average per iteration ---" % (time_elaspsed.second
 #             y_min = min([measurement.state_vector[1], y_min])
 #             y_max = max([measurement.state_vector[1], y_max])
 
-
-from scipy.stats import multivariate_normal
-from mpl_toolkits.mplot3d import Axes3D
-from matplotlib import cm
-
-def get_entropy(p_array):
-    # print(p_array)
-    entropy = -p_array*np.log2(p_array+1e-10) - (1-p_array)*np.log2(1-p_array+1e-10)
-    # print(entropy)
-    return entropy
-
-def get_mixture_density(x, y, weights, means, sigmas):
-    # We use the quantiles as a parameter in the multivariate_normal function. We don't need to pass in any quantiles,
-    # but the last axis must have the components x and y
-    quantiles = np.empty(x.shape + (2,))  # if  x.shape is (m,n) then quantiles.shape is (m,n,2)
-    quantiles[:, :, 0] = x
-    quantiles[:, :, 1] = y
-
-    # Go through each gaussian in the list and add its PDF to the mixture
-    z = np.zeros(x.shape)
-    for gaussian in range(len(weights)):
-        z += weights[gaussian]*multivariate_normal.pdf(x=quantiles, mean=means[gaussian, :], cov=sigmas[gaussian])
-    return z
-
 from matplotlib import animation
 from matplotlib import pyplot as plt
 from matplotlib.lines import Line2D  # Will be used when making the legend
@@ -556,39 +615,39 @@ def animate(i, img_plot, truths, tracks, measurements, clutter):
     # axL.view_init(elev=30, azim=-80)
     # axL.set_zlim(0, 0.3)
 
-    # Initialize the variables
-    weights = []  # weights of each Gaussian. This is analogous to the probability of its existence
-    means = []    # means of each Gaussian. This is equal to the x and y of its state vector
-    sigmas = []   # standard deviation of each Gaussian.
+    # # Initialize the variables
+    # weights = []  # weights of each Gaussian. This is analogous to the probability of its existence
+    # means = []    # means of each Gaussian. This is equal to the x and y of its state vector
+    # sigmas = []   # standard deviation of each Gaussian.
 
-    # Fill the lists of weights, means, and standard deviations
-    if (USE_CONST_ACC_MODEL):
-        for state in all_gaussians[i]:
-            weights.append(state.weight)
-            means.append([state.state_vector[0], state.state_vector[3]])
-            sigmas.append([state.covar[0][0], state.covar[3][3]])
-    else:
-        for state in all_gaussians[i]:
-            weights.append(state.weight)
-            means.append([state.state_vector[0], state.state_vector[2]])
-            sigmas.append([state.covar[0][0], state.covar[2][2]])
+    # # Fill the lists of weights, means, and standard deviations
+    # if (USE_CONST_ACC_MODEL):
+    #     for state in all_gaussians[i]:
+    #         weights.append(state.weight)
+    #         means.append([state.state_vector[0], state.state_vector[3]])
+    #         sigmas.append([state.covar[0][0], state.covar[3][3]])
+    # else:
+    #     for state in all_gaussians[i]:
+    #         weights.append(state.weight)
+    #         means.append([state.state_vector[0], state.state_vector[2]])
+    #         sigmas.append([state.covar[0][0], state.covar[2][2]])
     
-    means = np.array(means)
-    sigmas = np.array(sigmas)
+    # means = np.array(means)
+    # sigmas = np.array(sigmas)
 
     # Generate the z values over the space and plot on the left axis
     # zarray[:, :, i] = get_mixture_density(x, y, weights, means, sigmas)
-    zarray[:, :, i] = get_entropy(get_mixture_density(x, y, weights, means, sigmas))
-    zarray[:, :, i] += get_entropy(Search_Prob_by_time[i])
+    # zarray[:, :, i] = get_entropy(get_mixture_density(x, y, weights, means, sigmas))
+    # zarray[:, :, i] += get_entropy(Search_Prob_by_time[i])
 
     # sf = axL.plot_surface(x, y, zarray[:, :, i], cmap=cm.RdBu, linewidth=0, antialiased=False)
-    img_plot = axR.imshow(cv2.flip(zarray[:, :, i],0),
+    img_plot = axR.imshow(cv2.flip(entropy_by_time[:, :, i],0),
                             extent=[x_min,x_max,y_min,y_max],
                             norm=cm.colors.Normalize(vmin=0, vmax=0.1))
 
 
     # Make lists to hold the new ground truths, tracks, detections, and clutter
-    new_truths, new_tracks, new_measurements, new_clutter, new_UAV1_p = [], [], [], [], []
+    new_truths, new_tracks, new_measurements, new_clutter, new_tasks = [], [], [], [], []
 
     if (USE_CONST_ACC_MODEL):
         for truth in truths_by_time[i]:
@@ -624,6 +683,16 @@ def animate(i, img_plot, truths, tracks, measurements, clutter):
     UAV1_FOV_Plot.set_data(*UAV1_Polygon[i].exterior.xy)
     UAV2_FOV_Plot.set_data(*UAV2_Polygon[i].exterior.xy)
     UAV3_FOV_Plot.set_data(*UAV3_Polygon[i].exterior.xy)
+
+    # for task in tasks_by_time[i]:
+    #     print(task)
+    #     new_tasks.append([task[0], task[1]])
+    # if new_tasks:
+    #     tasks_p.set_offsets(new_tasks)
+
+    # print("printing tasks")
+    tasks_array = np.array([tasks_x_by_time[i],tasks_y_by_time[i]])
+    tasks_p.set_offsets(tasks_array.T)
 
     # Create a legend. The use of Line2D is purely for the visual in the legend
     # data_types = [Line2D([0], [0], color='blue', marker='+', markerfacecolor='blue', markersize=15,
@@ -675,6 +744,9 @@ clutter = axR.scatter(x_min, y_min, c='green', s=200, marker="1", linewidth=2, z
 UAV1_p = axR.scatter(x_min, y_min, s=200, c='white', marker="*", linewidth=1, zorder=2, label="UAV")
 UAV2_p = axR.scatter(x_min, y_min, s=200, c='white', marker="*", linewidth=1, zorder=2)
 UAV3_p = axR.scatter(x_min, y_min, s=200, c='white', marker="*", linewidth=1, zorder=2)
+
+tasks_p = axR.scatter(x_min, y_min, c='white', s=50, marker="+", linewidth=1, zorder=3, label="Tasks")
+
 axR.legend(loc='upper right',prop={'size': 16})
 # axR.legend(bbox_to_anchor=(1.0, 1), loc='upper left')
 
