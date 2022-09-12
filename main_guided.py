@@ -43,7 +43,7 @@ USE_CONST_ACC_MODEL = False
 PIXELS_X, PIXELS_Y = 200, 200
 x_min, x_max, y_min, y_max = -100, 100, -100, 100
 
-number_steps = 120
+number_steps = 240
 death_probability = 1e-4
 birth_probability = 1e-4
 probability_detection = 0.9
@@ -65,12 +65,12 @@ to_img_bias = [ 0.5*PIXELS_X, 0.5*PIXELS_Y ]
 to_img_scale = [ PIXELS_X/(x_max-x_min) , PIXELS_Y/(y_max-y_min) ]
 NEG_MEAS_VALUE = -0.5*9
 # p_s = 0.5; # probability of staying at the same location
-SS_Like = 0.06 # Steady State Likelihood Value
+SS_Like = 0.01 # Steady State Likelihood Value
 Decay = 0.01; # decay rate
-Absent_Like = 1/(1+SS_Like); # probability of target not present in arena
-Birth_Like = Decay*(1-Absent_Like);
+Absent_Like = 1.0/(1.0+SS_Like); # probability of target not present in arena
+Birth_Like = Decay*(1.0-Absent_Like);
 Death_Like = Decay*Absent_Like;
-blur_kernel = (1-Death_Like)*cv2.getGaussianKernel(3,0)
+blur_kernel = (1.0-Death_Like)*cv2.getGaussianKernel(3,0)
 Like_Ratio = np.ones((PIXELS_X, PIXELS_Y)) * SS_Like
 Like_Ratio_by_time = []
 Search_Prob_by_time = []
@@ -262,8 +262,8 @@ for k in range(number_steps):
         x_vel = -iter*1*np.sign(np.sin(k/10))
         y_vel = iter*1*np.sign(np.cos(k/10))
 
-        # if (iter==3):
-        x_vel, y_vel = 0, 0
+        if (iter==3):
+            x_vel, y_vel = 0, 0
 
         if (USE_CONST_ACC_MODEL):
             x = truth.state_vector[0] + x_vel # dt is 1 second
@@ -477,9 +477,9 @@ tasks_x_by_time=[]
 tasks_y_by_time=[]
 tasks_by_time=[]
 
-UAV1_pos = np.array([50.0, 50.0, 20.0])
-UAV2_pos = np.array([-50.0, 50.0, 20.0])
-UAV3_pos = np.array([0.0, -50.0, 20.0])
+UAV1_pos = np.array([10.0, 10.0, 20.0])
+UAV2_pos = np.array([-10.0, 10.0, 20.0])
+UAV3_pos = np.array([0.0, -10.0, 20.0])
 UAV1_vel_lp = np.array([0.0, 0.0, 0.0])
 UAV2_vel_lp = np.array([0.0, 0.0, 0.0])
 UAV3_vel_lp = np.array([0.0, 0.0, 0.0])
@@ -489,50 +489,9 @@ UAV3_vel_lp = np.array([0.0, 0.0, 0.0])
 v_min , v_max = -5, 5
 a_min , a_max = -5, 5
 control_gain = 1.0
-lp_gain = 0.5
+lp_gain = 0.1
 
 for n in range(number_steps):
-
-    # print(UAV1_pos[0:2])
-    UAV1_pos_px = np.int32(UAV1_pos[0:2] * to_img_scale + to_img_bias)
-    UAV2_pos_px = np.int32(UAV2_pos[0:2] * to_img_scale + to_img_bias)
-    UAV3_pos_px = np.int32(UAV3_pos[0:2] * to_img_scale + to_img_bias)
-    UAV1_vel = control_gain*get_force_from_entropy(UAV1_pos_px, entropy_by_time[:,:,n-1])
-    UAV2_vel = control_gain*get_force_from_entropy(UAV2_pos_px, entropy_by_time[:,:,n-1])
-    UAV3_vel = control_gain*get_force_from_entropy(UAV3_pos_px, entropy_by_time[:,:,n-1])
-
-    # UAV1_acc[0] = constrain(UAV1_acc[0], a_min, a_max)
-    # UAV1_acc[1] = constrain(UAV1_acc[1], a_min, a_max)
-    # UAV2_acc[0] = constrain(UAV2_acc[0], a_min, a_max)
-    # UAV2_acc[1] = constrain(UAV2_acc[1], a_min, a_max)
-    # UAV3_acc[0] = constrain(UAV3_acc[0], a_min, a_max)
-    # UAV3_acc[1] = constrain(UAV3_acc[1], a_min, a_max)
-
-    # UAV1_vel = UAV1_vel + UAV1_acc
-    # UAV2_vel = UAV2_vel + UAV2_acc
-    # UAV3_vel = UAV3_vel + UAV3_acc
-
-    UAV1_vel[0] = constrain(UAV1_vel[0], v_min, v_max)
-    UAV1_vel[1] = constrain(UAV1_vel[1], v_min, v_max)
-    UAV2_vel[0] = constrain(UAV2_vel[0], v_min, v_max)
-    UAV2_vel[1] = constrain(UAV2_vel[1], v_min, v_max)
-    UAV3_vel[0] = constrain(UAV3_vel[0], v_min, v_max)
-    UAV3_vel[1] = constrain(UAV3_vel[1], v_min, v_max)
-
-    UAV1_vel_lp = lp_gain*UAV1_vel_lp + (1-lp_gain)*UAV1_vel
-    UAV2_vel_lp = lp_gain*UAV2_vel_lp + (1-lp_gain)*UAV2_vel
-    UAV3_vel_lp = lp_gain*UAV3_vel_lp + (1-lp_gain)*UAV3_vel
-
-    UAV1_pos = UAV1_pos + UAV1_vel_lp
-    UAV2_pos = UAV2_pos + UAV2_vel_lp
-    UAV3_pos = UAV3_pos + UAV3_vel_lp
-
-    UAV1_pos[0] = constrain(UAV1_pos[0], x_min, x_max)
-    UAV1_pos[1] = constrain(UAV1_pos[1], x_min, x_max)
-    UAV2_pos[0] = constrain(UAV2_pos[0], x_min, x_max)
-    UAV2_pos[1] = constrain(UAV2_pos[1], x_min, x_max)
-    UAV3_pos[0] = constrain(UAV3_pos[0], x_min, x_max)
-    UAV3_pos[1] = constrain(UAV3_pos[1], x_min, x_max)
 
     UAV1.append(UAV1_pos)
     UAV2.append(UAV2_pos)
@@ -548,10 +507,6 @@ for n in range(number_steps):
     UAV1_Rot.append(get_Rotation_from_acc(acc1,yaw1))
     UAV2_Rot.append(get_Rotation_from_acc(acc2,yaw2))
     UAV3_Rot.append(get_Rotation_from_acc(acc3,yaw3))
-
-    UAV1_Polygon.append(getFOVPolygon(UAV1[n],UAV1_Rot[n]))
-    UAV2_Polygon.append(getFOVPolygon(UAV2[n],UAV2_Rot[n]))
-    UAV3_Polygon.append(getFOVPolygon(UAV3[n],UAV3_Rot[n]))
 
     measurement_set = set()
     timestamp = start_time + timedelta(seconds=n)
@@ -709,8 +664,10 @@ for n in range(number_steps):
     
     means = np.array(means)
     sigmas = np.array(sigmas)
-    entropy_by_time[:, :, n] = get_entropy(get_mixture_density(x, y, weights, means, sigmas))
-    entropy_by_time[:, :, n] += get_entropy(Search_Prob_by_time[n])
+    search_entropy = get_entropy(Search_Prob_by_time[n])
+    track_entropy = get_entropy(get_mixture_density(x, y, weights, means, sigmas))
+    total_entropy = search_entropy + track_entropy
+    entropy_by_time[:, :, n] = total_entropy
 
     # signal = entropy_by_time[:, :, n]
     # noise = np.ones((PIXELS_X, PIXELS_Y))
@@ -731,6 +688,63 @@ for n in range(number_steps):
     # plt.tight_layout()
     # plt.pause(0.1)
     # plt.clf()
+
+    # print(UAV1_pos[0:2])
+    UAV1_pos_px = np.int32(UAV1_pos[0:2] * to_img_scale + to_img_bias)
+    UAV2_pos_px = np.int32(UAV2_pos[0:2] * to_img_scale + to_img_bias)
+    UAV3_pos_px = np.int32(UAV3_pos[0:2] * to_img_scale + to_img_bias)
+
+    if (np.random.random()<0.7):
+        UAV1_vel = control_gain*get_force_from_entropy(UAV1_pos_px, search_entropy)
+    else:
+        UAV1_vel = control_gain*get_force_from_entropy(UAV1_pos_px, total_entropy)
+
+    if (np.random.random()<0.7):
+        UAV2_vel = control_gain*get_force_from_entropy(UAV2_pos_px, search_entropy)
+    else:
+        UAV2_vel = control_gain*get_force_from_entropy(UAV2_pos_px, total_entropy)
+
+    if (np.random.random()<0.7):
+        UAV3_vel = control_gain*get_force_from_entropy(UAV3_pos_px, search_entropy)
+    else:
+        UAV3_vel = control_gain*get_force_from_entropy(UAV3_pos_px, total_entropy)
+
+    # UAV1_acc[0] = constrain(UAV1_acc[0], a_min, a_max)
+    # UAV1_acc[1] = constrain(UAV1_acc[1], a_min, a_max)
+    # UAV2_acc[0] = constrain(UAV2_acc[0], a_min, a_max)
+    # UAV2_acc[1] = constrain(UAV2_acc[1], a_min, a_max)
+    # UAV3_acc[0] = constrain(UAV3_acc[0], a_min, a_max)
+    # UAV3_acc[1] = constrain(UAV3_acc[1], a_min, a_max)
+
+    # UAV1_vel = UAV1_vel + UAV1_acc
+    # UAV2_vel = UAV2_vel + UAV2_acc
+    # UAV3_vel = UAV3_vel + UAV3_acc
+
+    UAV1_vel[0] = constrain(UAV1_vel[0], v_min, v_max)
+    UAV1_vel[1] = constrain(UAV1_vel[1], v_min, v_max)
+    UAV2_vel[0] = constrain(UAV2_vel[0], v_min, v_max)
+    UAV2_vel[1] = constrain(UAV2_vel[1], v_min, v_max)
+    UAV3_vel[0] = constrain(UAV3_vel[0], v_min, v_max)
+    UAV3_vel[1] = constrain(UAV3_vel[1], v_min, v_max)
+
+    UAV1_vel_lp = lp_gain*UAV1_vel_lp + (1-lp_gain)*UAV1_vel
+    UAV2_vel_lp = lp_gain*UAV2_vel_lp + (1-lp_gain)*UAV2_vel
+    UAV3_vel_lp = lp_gain*UAV3_vel_lp + (1-lp_gain)*UAV3_vel
+
+    UAV1_pos = UAV1_pos + UAV1_vel_lp
+    UAV2_pos = UAV2_pos + UAV2_vel_lp
+    UAV3_pos = UAV3_pos + UAV3_vel_lp
+
+    UAV1_pos[0] = constrain(UAV1_pos[0], x_min, x_max)
+    UAV1_pos[1] = constrain(UAV1_pos[1], x_min, x_max)
+    UAV2_pos[0] = constrain(UAV2_pos[0], x_min, x_max)
+    UAV2_pos[1] = constrain(UAV2_pos[1], x_min, x_max)
+    UAV3_pos[0] = constrain(UAV3_pos[0], x_min, x_max)
+    UAV3_pos[1] = constrain(UAV3_pos[1], x_min, x_max)
+
+    UAV1_Polygon.append(getFOVPolygon(UAV1[n],UAV1_Rot[n]))
+    UAV2_Polygon.append(getFOVPolygon(UAV2[n],UAV2_Rot[n]))
+    UAV3_Polygon.append(getFOVPolygon(UAV3[n],UAV3_Rot[n]))
 
 # print(tasks_by_time)
 
