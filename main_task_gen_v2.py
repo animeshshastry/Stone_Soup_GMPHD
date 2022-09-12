@@ -34,13 +34,14 @@ from shapely.geometry import Point
 from shapely.geometry.polygon import Polygon
 from scipy.spatial.transform import Rotation as R
 import cv2
+import random
 
 font_size = 20
 
 deg2rad = 3.14/180.0
 USE_CONST_ACC_MODEL = False
 
-PIXELS_X, PIXELS_Y = 200, 200
+PIXELS_X, PIXELS_Y = 50, 50
 x_min, x_max, y_min, y_max = -100, 100, -100, 100
 
 number_steps = 120
@@ -53,6 +54,17 @@ state_threshold = 0.9
 gaussian_plot_threshold=0.1
 
 # target_sn = 0.2
+# task_density_factor = 11
+# task_density_base = 0.005
+# task_density_power = 20
+
+search_tasks_x = np.linspace(x_min, x_max, num=10)
+search_tasks_y = np.linspace(y_min, y_max, num=10)
+search_tasks_x, search_tasks_y = np.meshgrid(search_tasks_x, search_tasks_y)
+search_tasks_x = search_tasks_x.flatten()
+search_tasks_y = search_tasks_y.flatten()
+search_tasks_x = search_tasks_x.tolist()
+search_tasks_y = search_tasks_y.tolist()
 
 HFOV = 90*deg2rad # degrees
 VFOV = 90*deg2rad # degrees
@@ -65,7 +77,7 @@ to_img_bias = [ 0.5*PIXELS_X, 0.5*PIXELS_Y ]
 to_img_scale = [ PIXELS_X/(x_max-x_min) , PIXELS_Y/(y_max-y_min) ]
 NEG_MEAS_VALUE = -0.5*9
 # p_s = 0.5; # probability of staying at the same location
-SS_Like = 0.06 # Steady State Likelihood Value
+SS_Like = 0.01 # Steady State Likelihood Value
 Decay = 0.01; # decay rate
 Absent_Like = 1/(1+SS_Like); # probability of target not present in arena
 Birth_Like = Decay*(1-Absent_Like);
@@ -79,20 +91,6 @@ start_time = datetime.now()
 truths_by_time = []
 
 entropy_by_time = np.zeros((PIXELS_X, PIXELS_Y, number_steps))
-
-X_GRAD_IMG = np.zeros((2*PIXELS_X, 2*PIXELS_Y))
-Y_GRAD_IMG = np.zeros((2*PIXELS_X, 2*PIXELS_Y))
-for i in range(2*PIXELS_Y):
-    for j in range(2*PIXELS_X):
-        x = (j-PIXELS_X)/to_img_scale[0]
-        y = (i-PIXELS_Y)/to_img_scale[1]
-        magnitude = 100*(1.0/(x**2+y**2+0.01)**1.5)
-        X_GRAD_IMG[i,j] = min(magnitude,5)*x
-        Y_GRAD_IMG[i,j] = min(magnitude,5)*y
-    
-# cv2.imshow('title',X_GRAD_IMG)
-# cv2.waitKey(0)
-# cv2.destroyAllWindows() 
 
 ray1 = np.array([np.tan(0.5*VFOV), -np.tan(0.5*HFOV),-1])
 ray2 = np.array([np.tan(0.5*VFOV), np.tan(0.5*HFOV),-1])
@@ -161,34 +159,34 @@ UAV3 = []
 UAV1_Rot = []
 UAV2_Rot = []
 UAV3_Rot = []
-# for i in range(number_steps):
-#     UAV1.append([-30+30*np.cos(i/10),   -30+10*np.sin(-i/10),    20])
-#     UAV2.append([0+50*np.cos(i/5),     0+50*np.sin(i/5),      30])
-#     UAV3.append([30+10*np.cos(i/10),   30+30*np.sin(i/10),   20])
+for i in range(number_steps):
+    UAV1.append([-30+30*np.cos(i/10),   -30+10*np.sin(-i/10),    20])
+    UAV2.append([0+50*np.cos(i/5),     0+50*np.sin(i/5),      30])
+    UAV3.append([30+10*np.cos(i/10),   30+30*np.sin(i/10),   20])
 
-#     ## Simulate UAV orientation
-#     acc1 = np.array([[-30*(1/10)*(1/10)*np.cos(i/10) , -10*(-1/10)*(-1/10)*np.sin(-i/10) ,  9.81]])
-#     acc2 = np.array([[-50*(1/5)*(1/5)*np.cos(i/5) , -50*(1/5)*(1/5)*np.sin(i/5) ,     9.81]])
-#     acc3 = np.array([[-10*(1/10)*(1/10)*np.cos(i/10) , -30*(1/10)*(1/10)*np.sin(i/10) ,  9.81]])
-#     yaw1 = -i/10 + 3.14/2
-#     yaw2 = i/5 + 3.14/2
-#     yaw3 = i/10 + 3.14/2
-#     UAV1_Rot.append(get_Rotation_from_acc(acc1,yaw1))
-#     UAV2_Rot.append(get_Rotation_from_acc(acc2,yaw2))
-#     UAV3_Rot.append(get_Rotation_from_acc(acc3,yaw3))
+    ## Simulate UAV orientation
+    acc1 = np.array([[-30*(1/10)*(1/10)*np.cos(i/10) , -10*(-1/10)*(-1/10)*np.sin(-i/10) ,  9.81]])
+    acc2 = np.array([[-50*(1/5)*(1/5)*np.cos(i/5) , -50*(1/5)*(1/5)*np.sin(i/5) ,     9.81]])
+    acc3 = np.array([[-10*(1/10)*(1/10)*np.cos(i/10) , -30*(1/10)*(1/10)*np.sin(i/10) ,  9.81]])
+    yaw1 = -i/10 + 3.14/2
+    yaw2 = i/5 + 3.14/2
+    yaw3 = i/10 + 3.14/2
+    UAV1_Rot.append(get_Rotation_from_acc(acc1,yaw1))
+    UAV2_Rot.append(get_Rotation_from_acc(acc2,yaw2))
+    UAV3_Rot.append(get_Rotation_from_acc(acc3,yaw3))
 
-# UAV1 = np.array(UAV1)
-# UAV2 = np.array(UAV2)
-# UAV3 = np.array(UAV3)
+UAV1 = np.array(UAV1)
+UAV2 = np.array(UAV2)
+UAV3 = np.array(UAV3)
 
 ## Generate FOVPolygons for plotting
 UAV1_Polygon = []
 UAV2_Polygon = []
 UAV3_Polygon = []
-# for i in range(number_steps):
-#     UAV1_Polygon.append(getFOVPolygon(UAV1[i],UAV1_Rot[i]))
-#     UAV2_Polygon.append(getFOVPolygon(UAV2[i],UAV2_Rot[i]))
-#     UAV3_Polygon.append(getFOVPolygon(UAV3[i],UAV3_Rot[i]))
+for i in range(number_steps):
+    UAV1_Polygon.append(getFOVPolygon(UAV1[i],UAV1_Rot[i]))
+    UAV2_Polygon.append(getFOVPolygon(UAV2[i],UAV2_Rot[i]))
+    UAV3_Polygon.append(getFOVPolygon(UAV3[i],UAV3_Rot[i]))
 
 # Create transition model
 from stonesoup.models.transition.linear import CombinedLinearGaussianTransitionModel, ConstantVelocity, ConstantAcceleration
@@ -263,7 +261,7 @@ for k in range(number_steps):
         y_vel = iter*1*np.sign(np.cos(k/10))
 
         # if (iter==3):
-        x_vel, y_vel = 0, 0
+        # x_vel, y_vel = 0, 0
 
         if (USE_CONST_ACC_MODEL):
             x = truth.state_vector[0] + x_vel # dt is 1 second
@@ -298,49 +296,49 @@ from stonesoup.types.detection import Clutter
 
 all_measurements = []
 
-# for k in range(number_steps):
-#     measurement_set = set()
-#     timestamp = start_time + timedelta(seconds=k)
+for k in range(number_steps):
+    measurement_set = set()
+    timestamp = start_time + timedelta(seconds=k)
 
-#     for truth in truths:
-#         # try:
-#         #     truth_state = truth[timestamp]
-#         # except IndexError:
-#         #     # This truth not alive at this time. Skip this iteration of the for loop.
-#         #     continue
+    for truth in truths:
+        # try:
+        #     truth_state = truth[timestamp]
+        # except IndexError:
+        #     # This truth not alive at this time. Skip this iteration of the for loop.
+        #     continue
 
-#         truth_state = truth[timestamp]
+        truth_state = truth[timestamp]
 
-#         if (inFOV(truth_state.state_vector,UAV1[k],UAV1_Rot[k])
-#             or inFOV(truth_state.state_vector,UAV2[k],UAV2_Rot[k])
-#             or inFOV(truth_state.state_vector,UAV3[k],UAV3_Rot[k])):
+        if (inFOV(truth_state.state_vector,UAV1[k],UAV1_Rot[k])
+            or inFOV(truth_state.state_vector,UAV2[k],UAV2_Rot[k])
+            or inFOV(truth_state.state_vector,UAV3[k],UAV3_Rot[k])):
 
-#             # Generate actual detection from the state with a 10% chance that no detection is received.
-#             if np.random.rand() <= probability_detection:
-#                 # Generate actual detection from the state
-#                 measurement = measurement_model.function(truth_state, noise=True)
-#                 measurement_set.add(TrueDetection(state_vector=measurement,
-#                                                   groundtruth_path=truth,
-#                                                   timestamp=truth_state.timestamp,
-#                                                   measurement_model=measurement_model))
+            # Generate actual detection from the state with a 10% chance that no detection is received.
+            if np.random.rand() <= probability_detection:
+                # Generate actual detection from the state
+                measurement = measurement_model.function(truth_state, noise=True)
+                measurement_set.add(TrueDetection(state_vector=measurement,
+                                                  groundtruth_path=truth,
+                                                  timestamp=truth_state.timestamp,
+                                                  measurement_model=measurement_model))
 
-#     # Generate clutter at this time-step
-#     for _ in range(np.random.poisson(clutter_rate)):
-#             while True:
-#                 x = uniform.rvs(-200, 400)
-#                 y = uniform.rvs(-200, 400)
-#                 if (USE_CONST_ACC_MODEL):
-#                     clutter_state = [x,0,0,y,0,0]
-#                 else:
-#                     clutter_state = [x,0,y,0]
-#                 if(inFOV(clutter_state,UAV1[k],UAV1_Rot[k]) 
-#                     or inFOV(clutter_state,UAV2[k],UAV2_Rot[k]) 
-#                     or inFOV(clutter_state,UAV3[k],UAV3_Rot[k])):
-#                     measurement_set.add(Clutter(np.array([[x], [y]]), timestamp=timestamp,
-#                                         measurement_model=measurement_model))
-#                     break
+    # Generate clutter at this time-step
+    for _ in range(np.random.poisson(clutter_rate)):
+            while True:
+                x = uniform.rvs(-200, 400)
+                y = uniform.rvs(-200, 400)
+                if (USE_CONST_ACC_MODEL):
+                    clutter_state = [x,0,0,y,0,0]
+                else:
+                    clutter_state = [x,0,y,0]
+                if(inFOV(clutter_state,UAV1[k],UAV1_Rot[k]) 
+                    or inFOV(clutter_state,UAV2[k],UAV2_Rot[k]) 
+                    or inFOV(clutter_state,UAV3[k],UAV3_Rot[k])):
+                    measurement_set.add(Clutter(np.array([[x], [y]]), timestamp=timestamp,
+                                        measurement_model=measurement_model))
+                    break
 
-#     all_measurements.append(measurement_set)
+    all_measurements.append(measurement_set)
 
 time0 = time.time()
 
@@ -448,24 +446,6 @@ def get_mixture_density(x, y, weights, means, sigmas):
 def constrain(val, min_val, max_val):
     return min(max_val, max(min_val, val))
 
-def get_force_from_entropy(pos, field):
-    # field = field
-    x_img = X_GRAD_IMG[PIXELS_Y-pos[1] : 2*PIXELS_Y-pos[1], PIXELS_X-pos[0] : 2*PIXELS_X-pos[0]]
-    y_img = Y_GRAD_IMG[PIXELS_Y-pos[1] : 2*PIXELS_Y-pos[1], PIXELS_X-pos[0] : 2*PIXELS_X-pos[0]]
-    # x_img = cv2.flip(x_img,1)
-    # y_img = cv2.flip(y_img,0)
-    # field = cv2.flip(field,0)
-    fx_img = cv2.multiply(x_img,field)
-    fy_img = cv2.multiply(y_img,field)
-    fx = np.sum(fx_img)
-    fy = np.sum(fy_img)
-    # print(fx)
-    # cv2.imshow('title',x_img)
-    # cv2.waitKey(0)
-    # cv2.destroyAllWindows() 
-
-    return np.array([fx,fy,0])
-
 print("--- Took %s seconds to initilize ---" % (time.time() - time0))
 time0 = datetime.now()
 
@@ -477,127 +457,7 @@ tasks_x_by_time=[]
 tasks_y_by_time=[]
 tasks_by_time=[]
 
-UAV1_pos = np.array([50.0, 50.0, 20.0])
-UAV2_pos = np.array([-50.0, 50.0, 20.0])
-UAV3_pos = np.array([0.0, -50.0, 20.0])
-UAV1_vel_lp = np.array([0.0, 0.0, 0.0])
-UAV2_vel_lp = np.array([0.0, 0.0, 0.0])
-UAV3_vel_lp = np.array([0.0, 0.0, 0.0])
-# UAV1.append(UAV1_pos)
-# UAV2.append(UAV2_pos)
-# UAV3.append(UAV3_pos)
-v_min , v_max = -5, 5
-a_min , a_max = -5, 5
-control_gain = 1.0
-lp_gain = 0.5
-
-for n in range(number_steps):
-
-    # print(UAV1_pos[0:2])
-    UAV1_pos_px = np.int32(UAV1_pos[0:2] * to_img_scale + to_img_bias)
-    UAV2_pos_px = np.int32(UAV2_pos[0:2] * to_img_scale + to_img_bias)
-    UAV3_pos_px = np.int32(UAV3_pos[0:2] * to_img_scale + to_img_bias)
-    UAV1_vel = control_gain*get_force_from_entropy(UAV1_pos_px, entropy_by_time[:,:,n-1])
-    UAV2_vel = control_gain*get_force_from_entropy(UAV2_pos_px, entropy_by_time[:,:,n-1])
-    UAV3_vel = control_gain*get_force_from_entropy(UAV3_pos_px, entropy_by_time[:,:,n-1])
-
-    # UAV1_acc[0] = constrain(UAV1_acc[0], a_min, a_max)
-    # UAV1_acc[1] = constrain(UAV1_acc[1], a_min, a_max)
-    # UAV2_acc[0] = constrain(UAV2_acc[0], a_min, a_max)
-    # UAV2_acc[1] = constrain(UAV2_acc[1], a_min, a_max)
-    # UAV3_acc[0] = constrain(UAV3_acc[0], a_min, a_max)
-    # UAV3_acc[1] = constrain(UAV3_acc[1], a_min, a_max)
-
-    # UAV1_vel = UAV1_vel + UAV1_acc
-    # UAV2_vel = UAV2_vel + UAV2_acc
-    # UAV3_vel = UAV3_vel + UAV3_acc
-
-    UAV1_vel[0] = constrain(UAV1_vel[0], v_min, v_max)
-    UAV1_vel[1] = constrain(UAV1_vel[1], v_min, v_max)
-    UAV2_vel[0] = constrain(UAV2_vel[0], v_min, v_max)
-    UAV2_vel[1] = constrain(UAV2_vel[1], v_min, v_max)
-    UAV3_vel[0] = constrain(UAV3_vel[0], v_min, v_max)
-    UAV3_vel[1] = constrain(UAV3_vel[1], v_min, v_max)
-
-    UAV1_vel_lp = lp_gain*UAV1_vel_lp + (1-lp_gain)*UAV1_vel
-    UAV2_vel_lp = lp_gain*UAV2_vel_lp + (1-lp_gain)*UAV2_vel
-    UAV3_vel_lp = lp_gain*UAV3_vel_lp + (1-lp_gain)*UAV3_vel
-
-    UAV1_pos = UAV1_pos + UAV1_vel_lp
-    UAV2_pos = UAV2_pos + UAV2_vel_lp
-    UAV3_pos = UAV3_pos + UAV3_vel_lp
-
-    UAV1_pos[0] = constrain(UAV1_pos[0], x_min, x_max)
-    UAV1_pos[1] = constrain(UAV1_pos[1], x_min, x_max)
-    UAV2_pos[0] = constrain(UAV2_pos[0], x_min, x_max)
-    UAV2_pos[1] = constrain(UAV2_pos[1], x_min, x_max)
-    UAV3_pos[0] = constrain(UAV3_pos[0], x_min, x_max)
-    UAV3_pos[1] = constrain(UAV3_pos[1], x_min, x_max)
-
-    UAV1.append(UAV1_pos)
-    UAV2.append(UAV2_pos)
-    UAV3.append(UAV3_pos)
-
-    ## Simulate UAV orientation
-    acc1 = np.array([[0, 0, 9.81]])
-    acc2 = np.array([[0, 0, 9.81]])
-    acc3 = np.array([[0, 0, 9.81]])
-    yaw1 = 0 
-    yaw2 = 0
-    yaw3 = 0
-    UAV1_Rot.append(get_Rotation_from_acc(acc1,yaw1))
-    UAV2_Rot.append(get_Rotation_from_acc(acc2,yaw2))
-    UAV3_Rot.append(get_Rotation_from_acc(acc3,yaw3))
-
-    UAV1_Polygon.append(getFOVPolygon(UAV1[n],UAV1_Rot[n]))
-    UAV2_Polygon.append(getFOVPolygon(UAV2[n],UAV2_Rot[n]))
-    UAV3_Polygon.append(getFOVPolygon(UAV3[n],UAV3_Rot[n]))
-
-    measurement_set = set()
-    timestamp = start_time + timedelta(seconds=n)
-
-    for truth in truths:
-        # try:
-        #     truth_state = truth[timestamp]
-        # except IndexError:
-        #     # This truth not alive at this time. Skip this iteration of the for loop.
-        #     continue
-
-        truth_state = truth[timestamp]
-
-        # print(UAV1[n])
-
-        if (inFOV(truth_state.state_vector,UAV1[n],UAV1_Rot[n])
-            or inFOV(truth_state.state_vector,UAV2[n],UAV2_Rot[n])
-            or inFOV(truth_state.state_vector,UAV3[n],UAV3_Rot[n])):
-
-            # Generate actual detection from the state with a 10% chance that no detection is received.
-            if np.random.rand() <= probability_detection:
-                # Generate actual detection from the state
-                measurement = measurement_model.function(truth_state, noise=True)
-                measurement_set.add(TrueDetection(state_vector=measurement,
-                                                  groundtruth_path=truth,
-                                                  timestamp=truth_state.timestamp,
-                                                  measurement_model=measurement_model))
-
-    # Generate clutter at this time-step
-    for _ in range(np.random.poisson(clutter_rate)):
-            while True:
-                x_clutter = uniform.rvs(-200, 400)
-                y_clutter = uniform.rvs(-200, 400)
-                if (USE_CONST_ACC_MODEL):
-                    clutter_state = [x_clutter,0,0,y_clutter,0,0]
-                else:
-                    clutter_state = [x_clutter,0,y_clutter,0]
-                if(inFOV(clutter_state,UAV1[n],UAV1_Rot[n]) 
-                    or inFOV(clutter_state,UAV2[n],UAV2_Rot[n]) 
-                    or inFOV(clutter_state,UAV3[n],UAV3_Rot[n])):
-                    measurement_set.add(Clutter(np.array([[x_clutter], [y_clutter]]), timestamp=timestamp,
-                                        measurement_model=measurement_model))
-                    break
-
-    all_measurements.append(measurement_set)
-    measurements = measurement_set
+for n, measurements in enumerate(all_measurements):
 
     mask1 = np.zeros((PIXELS_Y,PIXELS_X))
     mask2 = np.zeros((PIXELS_Y,PIXELS_X))
@@ -709,8 +569,9 @@ for n in range(number_steps):
     
     means = np.array(means)
     sigmas = np.array(sigmas)
-    entropy_by_time[:, :, n] = get_entropy(get_mixture_density(x, y, weights, means, sigmas))
-    entropy_by_time[:, :, n] += get_entropy(Search_Prob_by_time[n])
+    search_entropy = get_entropy(Search_Prob_by_time[n])
+    track_entropy = get_entropy(get_mixture_density(x, y, weights, means, sigmas))
+    entropy_by_time[:, :, n] = search_entropy + track_entropy
 
     # signal = entropy_by_time[:, :, n]
     # noise = np.ones((PIXELS_X, PIXELS_Y))
@@ -723,8 +584,30 @@ for n in range(number_steps):
     # cv2.waitKey(0)
     # cv2.destroyAllWindows() 
 
-    # tasks_x_by_time.append(x_bar)
-    # tasks_y_by_time.append(y_bar)
+    x_bar = search_tasks_x.copy()
+    y_bar = search_tasks_y.copy()
+
+    # print(means)
+    for idx, mean in enumerate(means):
+        sigma = sigmas[idx]
+        # x_bar = np.concatenate((x_bar, [mean[0]]), axis=0)
+        # x_bar = np.concatenate((y_bar, [mean[1]]), axis=0)
+        x_bar.append(mean[0])
+        y_bar.append(mean[1])
+
+        x_bar.append(mean[0]+1*np.log(sigma[0]))
+        x_bar.append(mean[0]+1*np.log(sigma[0]))
+        x_bar.append(mean[0]-1*np.log(sigma[0]))
+        x_bar.append(mean[0]-1*np.log(sigma[0]))
+
+        y_bar.append(mean[1]+1*np.log(sigma[0]))
+        y_bar.append(mean[1]-1*np.log(sigma[0]))
+        y_bar.append(mean[1]+1*np.log(sigma[0]))
+        y_bar.append(mean[1]-1*np.log(sigma[0]))
+
+    # print(x_bar)
+    tasks_x_by_time.append(x_bar)
+    tasks_y_by_time.append(y_bar)
     # tasks_by_time.append([x_gen,y_gen])
 
     # plt.scatter(x_gen, y_gen)
@@ -732,12 +615,12 @@ for n in range(number_steps):
     # plt.pause(0.1)
     # plt.clf()
 
-# print(tasks_by_time)
+# print(tasks_x_by_time)
 
 # print(UAV1)
-UAV1 = np.array(UAV1)
-UAV2 = np.array(UAV2)
-UAV3 = np.array(UAV3)
+# UAV1 = np.array(UAV1)
+# UAV2 = np.array(UAV2)
+# UAV3 = np.array(UAV3)
 # print(UAV1)
 
 time_elaspsed = datetime.now()-time0
@@ -854,8 +737,8 @@ def animate(i, img_plot, truths, tracks, measurements, clutter):
     #     tasks_p.set_offsets(new_tasks)
 
     # print("printing tasks")
-    # tasks_array = np.array([tasks_x_by_time[i],tasks_y_by_time[i]])
-    # tasks_p.set_offsets(tasks_array.T)
+    tasks_array = np.array([tasks_x_by_time[i],tasks_y_by_time[i]])
+    tasks_p.set_offsets(tasks_array.T)
 
     # Create a legend. The use of Line2D is purely for the visual in the legend
     # data_types = [Line2D([0], [0], color='blue', marker='+', markerfacecolor='blue', markersize=15,
@@ -908,7 +791,7 @@ UAV1_p = axR.scatter(x_min, y_min, s=200, c='white', marker="*", linewidth=1, zo
 UAV2_p = axR.scatter(x_min, y_min, s=200, c='white', marker="*", linewidth=1, zorder=2)
 UAV3_p = axR.scatter(x_min, y_min, s=200, c='white', marker="*", linewidth=1, zorder=2)
 
-# tasks_p = axR.scatter(x_min, y_min, c='white', s=50, marker="+", linewidth=1, zorder=3, label="Tasks")
+tasks_p = axR.scatter(x_min, y_min, c='white', s=50, marker="+", linewidth=1, zorder=3, label="Tasks")
 
 axR.legend(loc='upper right',prop={'size': 16})
 # axR.legend(bbox_to_anchor=(1.0, 1), loc='upper left')
