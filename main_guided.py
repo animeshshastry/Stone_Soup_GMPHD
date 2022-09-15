@@ -40,7 +40,7 @@ font_size = 20
 deg2rad = 3.14/180.0
 USE_CONST_ACC_MODEL = False
 
-PIXELS_X, PIXELS_Y = 200, 200
+PIXELS_X, PIXELS_Y = 100, 100
 x_min, x_max, y_min, y_max = -100, 100, -100, 100
 
 number_steps = 240
@@ -57,9 +57,11 @@ gaussian_plot_threshold=0.1
 HFOV = 90*deg2rad # degrees
 VFOV = 90*deg2rad # degrees
 
-FOVsize=30.0*np.sqrt(2)
-clutter_rate = 0.05*(1.0/100.0)*(FOVsize/np.sqrt(2))**2
-print(clutter_rate)
+# FOVsize = 30.0*np.sqrt(2)
+# clutter_rate = 0.05*(1.0/100.0)*(FOVsize/np.sqrt(2))**2
+# print(clutter_rate)
+
+clutter_rate = 0.45
 
 to_img_bias = [ 0.5*PIXELS_X, 0.5*PIXELS_Y ]
 to_img_scale = [ PIXELS_X/(x_max-x_min) , PIXELS_Y/(y_max-y_min) ]
@@ -80,6 +82,9 @@ truths_by_time = []
 
 entropy_by_time = np.zeros((PIXELS_X, PIXELS_Y, number_steps))
 
+gaussian_guidance_threshold = 7.0
+
+magnitude_threshold = 0.1
 X_GRAD_IMG = np.zeros((2*PIXELS_X, 2*PIXELS_Y))
 Y_GRAD_IMG = np.zeros((2*PIXELS_X, 2*PIXELS_Y))
 for i in range(2*PIXELS_Y):
@@ -87,12 +92,15 @@ for i in range(2*PIXELS_Y):
         x = (j-PIXELS_X)/to_img_scale[0]
         y = (i-PIXELS_Y)/to_img_scale[1]
         magnitude = 100*(1.0/(x**2+y**2+0.01)**1.5)
-        X_GRAD_IMG[i,j] = min(magnitude,5)*x
-        Y_GRAD_IMG[i,j] = min(magnitude,5)*y
+        if (magnitude>magnitude_threshold):
+            magnitude = 0.0
+            # magnitude = 1.0
+        X_GRAD_IMG[i,j] = magnitude*x
+        Y_GRAD_IMG[i,j] = magnitude*y
     
-# cv2.imshow('title',X_GRAD_IMG)
-# cv2.waitKey(0)
-# cv2.destroyAllWindows() 
+cv2.imshow('title',X_GRAD_IMG)
+cv2.waitKey(0)
+cv2.destroyAllWindows()
 
 ray1 = np.array([np.tan(0.5*VFOV), -np.tan(0.5*HFOV),-1])
 ray2 = np.array([np.tan(0.5*VFOV), np.tan(0.5*HFOV),-1])
@@ -448,13 +456,13 @@ def get_mixture_density(x, y, weights, means, sigmas):
 def constrain(val, min_val, max_val):
     return min(max_val, max(min_val, val))
 
-def get_force_from_entropy(pos, field):
+def get_force_from_entropy(pos, field, mask):
     # field = field
+    # mask = 1-mask
     x_img = X_GRAD_IMG[PIXELS_Y-pos[1] : 2*PIXELS_Y-pos[1], PIXELS_X-pos[0] : 2*PIXELS_X-pos[0]]
     y_img = Y_GRAD_IMG[PIXELS_Y-pos[1] : 2*PIXELS_Y-pos[1], PIXELS_X-pos[0] : 2*PIXELS_X-pos[0]]
-    # x_img = cv2.flip(x_img,1)
-    # y_img = cv2.flip(y_img,0)
-    # field = cv2.flip(field,0)
+    # x_img = mask * x_img
+    # y_img = mask * y_img
     fx_img = cv2.multiply(x_img,field)
     fy_img = cv2.multiply(y_img,field)
     fx = np.sum(fx_img)
@@ -488,8 +496,8 @@ UAV3_vel_lp = np.array([0.0, 0.0, 0.0])
 # UAV3.append(UAV3_pos)
 v_min , v_max = -5, 5
 a_min , a_max = -5, 5
-control_gain = 1.0
-lp_gain = 0.1
+control_gain = 10.0
+lp_gain = 0.0
 
 for n in range(number_steps):
 
@@ -667,7 +675,26 @@ for n in range(number_steps):
     search_entropy = get_entropy(Search_Prob_by_time[n])
     track_entropy = get_entropy(get_mixture_density(x, y, weights, means, sigmas))
     total_entropy = search_entropy + track_entropy
-    entropy_by_time[:, :, n] = total_entropy
+
+    means_guidance = []
+    sigmas_guidance = []
+    weights_guidance = []
+
+    for idx, mean in enumerate(means):
+        # print(sigmas[idx][0])
+        trace = sigmas[idx][0] + sigmas[idx][1]
+        if (trace > gaussian_guidance_threshold):
+            means_guidance.append(mean)
+            sigmas_guidance.append(sigmas[idx])
+            weights_guidance.append(weights[idx])
+
+    means_guidance = np.array(means_guidance)
+    sigmas_guidance = np.array(sigmas_guidance)
+    track_guidance_entropy = get_entropy(get_mixture_density(x, y, weights_guidance, means_guidance, sigmas_guidance))
+    total_guidance_entropy = search_entropy + track_guidance_entropy
+
+    entropy_by_time[:, :, n] = total_guidance_entropy
+    # entropy_by_time[:, :, n] = total_entropy
 
     # signal = entropy_by_time[:, :, n]
     # noise = np.ones((PIXELS_X, PIXELS_Y))
@@ -694,20 +721,24 @@ for n in range(number_steps):
     UAV2_pos_px = np.int32(UAV2_pos[0:2] * to_img_scale + to_img_bias)
     UAV3_pos_px = np.int32(UAV3_pos[0:2] * to_img_scale + to_img_bias)
 
-    if (np.random.random()<0.7):
-        UAV1_vel = control_gain*get_force_from_entropy(UAV1_pos_px, search_entropy)
-    else:
-        UAV1_vel = control_gain*get_force_from_entropy(UAV1_pos_px, total_entropy)
+    # if (np.random.random()<0.7):
+    #     UAV1_vel = control_gain*get_force_from_entropy(UAV1_pos_px, search_entropy)
+    # else:
+    #     UAV1_vel = control_gain*get_force_from_entropy(UAV1_pos_px, total_entropy)
 
-    if (np.random.random()<0.7):
-        UAV2_vel = control_gain*get_force_from_entropy(UAV2_pos_px, search_entropy)
-    else:
-        UAV2_vel = control_gain*get_force_from_entropy(UAV2_pos_px, total_entropy)
+    # if (np.random.random()<0.7):
+    #     UAV2_vel = control_gain*get_force_from_entropy(UAV2_pos_px, search_entropy)
+    # else:
+    #     UAV2_vel = control_gain*get_force_from_entropy(UAV2_pos_px, total_entropy)
 
-    if (np.random.random()<0.7):
-        UAV3_vel = control_gain*get_force_from_entropy(UAV3_pos_px, search_entropy)
-    else:
-        UAV3_vel = control_gain*get_force_from_entropy(UAV3_pos_px, total_entropy)
+    # if (np.random.random()<0.7):
+    #     UAV3_vel = control_gain*get_force_from_entropy(UAV3_pos_px, search_entropy)
+    # else:
+    #     UAV3_vel = control_gain*get_force_from_entropy(UAV3_pos_px, total_entropy)
+
+    UAV1_vel = control_gain*get_force_from_entropy(UAV1_pos_px, total_guidance_entropy, ~mask1.astype(bool))
+    UAV2_vel = control_gain*get_force_from_entropy(UAV2_pos_px, total_guidance_entropy, ~mask2.astype(bool))
+    UAV3_vel = control_gain*get_force_from_entropy(UAV3_pos_px, total_guidance_entropy, ~mask3.astype(bool))
 
     # UAV1_acc[0] = constrain(UAV1_acc[0], a_min, a_max)
     # UAV1_acc[1] = constrain(UAV1_acc[1], a_min, a_max)
